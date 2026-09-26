@@ -1,0 +1,14 @@
+# Normalise line endings in the repo; Windows scripts get CRLF, shell scripts LF on checkout.
+* text=auto
+*.bat text eol=crlf
+*.sh  text eol=lf
+# Binary assets
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.webp  binary
+*.pdf   binary
+*.onnx  binary
+*.ttf   binary
+*.woff2 binary
+*.ico   binary

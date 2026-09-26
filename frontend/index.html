@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>SuryaJal — AI rooftop solar + rainwater planner</title>
+    <meta name="description" content="Tap your roof on a satellite map. AI outlines it and shows your solar power, PM Surya Ghar subsidy, payback and rainwater harvest in seconds." />
+    <meta name="theme-color" content="#f3f5f0" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="apple-touch-icon" href="/brand/apple-touch-icon.png" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta property="og:title" content="SuryaJal — every roof is a power plant and a rain reservoir" />
+    <meta property="og:description" content="AI rooftop solar + rainwater planner. Free Green Roof Report in under a minute." />
+    <meta property="og:image" content="/brand/og.png" />
+    <style>
+      /* shown before React boots - matches the preflight loader background */
+      html { background: #101a14; }
+      #root:empty { min-height: 100vh; display: grid; place-items: center; }
+      #root:empty::after { content: ""; width: 56px; height: 56px; border-radius: 16px; background: url(/brand/logo-mark.svg) center / contain no-repeat; animation: sjp 1.2s ease-in-out infinite; }
+      @keyframes sjp { 50% { opacity: .45; transform: scale(.94); } }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

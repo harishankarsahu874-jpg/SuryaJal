@@ -1,0 +1,17 @@
+# Python
+.venv/
+__pycache__/
+.pytest_cache/
+# caches (safe to delete)
+.cache/
+# large model files (scripts/download_models.py fetches them)
+models/*.onnx
+models/*.part
+# runtime data - never commit visitors' data
+data/stats.json
+data/suryajal.db
+data/suryajal.db-*
+# frontend
+frontend/node_modules/
+frontend/dist/
+*.local

@@ -1,0 +1,216 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+@import "@fontsource-variable/plus-jakarta-sans";
+@import "@fontsource-variable/outfit";
+@import "@fontsource-variable/jetbrains-mono";
+
+@custom-variant dark (&:is(.dark *));
+
+/* ---------------------------------------------------------------- SuryaJal brand scale */
+@theme {
+  --color-sage-50: #f4f7f2;
+  --color-sage-100: #e8efe5;
+  --color-sage-200: #d5e3d2;
+  --color-sage-300: #b9cfb6;
+  --color-sage-400: #93b090;
+  --color-sage-500: #6f8f70;
+  --color-sage-600: #56735a;
+  --color-sage-700: #445c48;
+  --color-sage-800: #34473a;
+  --color-sage-900: #26342b;
+  --color-sage-950: #18221c;
+
+  --animate-float: float 6s ease-in-out infinite;
+  --animate-shimmer: shimmer 2.2s linear infinite;
+  --animate-scan: scan 2.4s ease-in-out infinite;
+
+  @keyframes float {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-8px); }
+  }
+  @keyframes shimmer {
+    from { background-position: -200% 0; }
+    to { background-position: 200% 0; }
+  }
+  @keyframes scan {
+    0% { transform: translateY(-100%); opacity: 0; }
+    15%, 85% { opacity: 1; }
+    100% { transform: translateY(100%); opacity: 0; }
+  }
+}
+
+@theme inline {
+  --font-sans: "Plus Jakarta Sans Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-heading: "Outfit Variable", "Plus Jakarta Sans Variable", ui-sans-serif, sans-serif;
+  --font-mono: "JetBrains Mono Variable", ui-monospace, monospace;
+
+  --color-sun: var(--sun);
+  --color-sun-soft: var(--sun-soft);
+  --color-sun-ink: var(--sun-ink);
+  --color-earth: var(--earth);
+  --color-water: var(--water);
+  --color-water-soft: var(--water-soft);
+  --color-water-ink: var(--water-ink);
+  --color-ink: var(--ink);
+
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --color-foreground: var(--foreground);
+  --color-background: var(--background);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+/* Sage "eco dashboard" palette (from the reference mock-up) + sun / water accents */
+:root {
+  --background: #f3f5f0;
+  --foreground: #1b261f;
+  --card: #ffffff;
+  --card-foreground: #1b261f;
+  --popover: #ffffff;
+  --popover-foreground: #1b261f;
+  --primary: #4f6b55;
+  --primary-foreground: #ffffff;
+  --secondary: #e6eee3;
+  --secondary-foreground: #2b3d31;
+  --muted: #edf1ea;
+  --muted-foreground: #65726a;
+  --accent: #e3ecdf;
+  --accent-foreground: #22322a;
+  --destructive: #c2410c;
+  --border: #e0e6dc;
+  --input: #d6ded2;
+  --ring: #87a38b;
+  --chart-1: #d3e3d0;
+  --chart-2: #7b5230;
+  --chart-3: #3d83a8;
+  --chart-4: #e9a23b;
+  --chart-5: #56735a;
+  --radius: 0.875rem;
+
+  --sun: #e9a23b;
+  --sun-soft: #fde8d3;
+  --sun-ink: #9a4a10;
+  --earth: #7b5230;
+  --water: #3d83a8;
+  --water-soft: #ddeef6;
+  --water-ink: #1d5572;
+  --ink: #0f1a14;
+
+  --sidebar: #f7f9f5;
+  --sidebar-foreground: #1b261f;
+  --sidebar-primary: #4f6b55;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #e6eee3;
+  --sidebar-accent-foreground: #2b3d31;
+  --sidebar-border: #e0e6dc;
+  --sidebar-ring: #87a38b;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html {
+    @apply font-sans;
+    -webkit-tap-highlight-color: transparent;
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+  }
+  ::selection {
+    background: color-mix(in oklab, var(--sun) 35%, transparent);
+  }
+}
+
+@layer utilities {
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .no-scrollbar {
+    scrollbar-width: none;
+  }
+  .safe-bottom {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .text-balance {
+    text-wrap: balance;
+  }
+}
+
+/* animated wave inside the loader logo */
+.sj-wave {
+  animation: sj-wave 2.6s linear infinite;
+}
+@keyframes sj-wave {
+  from { transform: translateX(0); }
+  to { transform: translateX(32px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sj-wave, .animate-float, .animate-scan, .animate-shimmer {
+    animation: none !important;
+  }
+}
+
+/* ---------------------------------------------------------------- Leaflet map markers */
+.sj-vtx { width: 14px; height: 14px; margin: -7px 0 0 -7px; border-radius: 50%; background: #fff; border: 3px solid #facc15; box-shadow: 0 1px 4px rgba(0,0,0,.5); cursor: grab; }
+.sj-vtx.first { background: #facc15; }
+.sj-prompt { width: 14px; height: 14px; margin: -7px 0 0 -7px; border-radius: 50%; border: 2px solid #fff; box-shadow: 0 1px 4px rgba(0,0,0,.6); }
+.sj-prompt.pos { background: #22c55e; }
+.sj-prompt.neg { background: #ef4444; }
+.sj-pulse { width: 22px; height: 22px; margin: -11px 0 0 -11px; border-radius: 50%; background: rgba(250,204,21,.9); box-shadow: 0 0 0 0 rgba(250,204,21,.7); animation: sj-pulse 1.1s infinite; }
+@keyframes sj-pulse { 70% { box-shadow: 0 0 0 26px rgba(250,204,21,0); } 100% { box-shadow: 0 0 0 0 rgba(250,204,21,0); } }
+.sj-me { width: 16px; height: 16px; margin: -8px 0 0 -8px; border-radius: 50%; background: #3b82f6; border: 3px solid #fff; box-shadow: 0 0 0 6px rgba(59,130,246,.3); }
+.sj-area-tip.leaflet-tooltip { background: rgba(24,34,28,.88); color: #fff; border: 0; border-radius: 999px; font-weight: 700; padding: 4px 10px; box-shadow: none; font-family: var(--font-sans); }
+.sj-area-tip.leaflet-tooltip::before { display: none; }
+.leaflet-container { font-family: var(--font-sans); background: #18221c; }
+.leaflet-control-zoom a, .leaflet-control-layers { border-radius: 12px !important; }
+.leaflet-bar { border: 0 !important; box-shadow: 0 4px 14px rgba(0,0,0,.25) !important; border-radius: 12px !important; overflow: hidden; }
+.leaflet-control-attribution { font-size: 10px; }
+@media (max-width: 1023px) {
+  .sj-map .leaflet-bottom { margin-bottom: calc(var(--sj-stack, 72px) + 10px); transition: margin-bottom .25s ease; }
+}
+@media (pointer: coarse) {
+  .sj-map .leaflet-control-zoom { display: none; }   /* phones pinch to zoom */
+}
+@media (pointer: coarse) {
+  .sj-vtx { width: 22px; height: 22px; margin: -11px 0 0 -11px; border-width: 4px; }
+}
+@media (prefers-reduced-motion: reduce) { .sj-pulse { animation: none; } }

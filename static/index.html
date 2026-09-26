@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>SuryaJal — AI Rooftop Solar + Rainwater Planner</title>
+<meta name="description" content="Tap your roof on the satellite map. AI outlines it and shows your solar power, subsidy, payback and rainwater harvest in seconds.">
+<meta name="theme-color" content="#0B1320">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='26' cy='26' r='14' fill='%23F59E0B'/%3E%3Cpath d='M44 22c6 9 11 15 11 21a11 11 0 0 1-22 0c0-6 5-12 11-21z' fill='%230EA5E9'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="/static/vendor/leaflet/leaflet.css">
+<link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <svg class="logo" viewBox="0 0 64 64" aria-hidden="true">
+      <g stroke="#F59E0B" stroke-width="4" stroke-linecap="round">
+        <line x1="26" y1="3" x2="26" y2="9"/><line x1="26" y1="43" x2="26" y2="49"/>
+        <line x1="3" y1="26" x2="9" y2="26"/><line x1="43" y1="26" x2="49" y2="26"/>
+        <line x1="9.7" y1="9.7" x2="14" y2="14"/><line x1="38" y1="38" x2="42.3" y2="42.3"/>
+        <line x1="9.7" y1="42.3" x2="14" y2="38"/><line x1="38" y1="14" x2="42.3" y2="9.7"/>
+      </g>
+      <circle cx="26" cy="26" r="12" fill="#F59E0B"/>
+      <path d="M46 26c5 8 10 13 10 19a10 10 0 0 1-20 0c0-6 5-11 10-19z" fill="#0EA5E9" stroke="#0B1320" stroke-width="2.5"/>
+    </svg>
+    <div class="brand-text">
+      <h1>SuryaJal</h1>
+      <p>AI rooftop solar + rainwater planner</p>
+    </div>
+  </div>
+  <form id="searchForm" class="search" autocomplete="off" role="search">
+    <input id="searchInput" type="search" placeholder="Search area, street or landmark… or paste “lat, lon”" aria-label="Search a place">
+    <button type="submit" class="btn primary small">Search</button>
+    <ul id="searchResults" class="results" hidden></ul>
+  </form>
+  <button id="locateBtn" class="btn ghost small" type="button" title="Go to my location">📍<span class="hide-sm"> My location</span></button>
+</header>
+
+<main class="layout">
+  <section class="mapwrap">
+    <div id="map" aria-label="Satellite map"></div>
+
+    <div class="toolbar" id="toolbar" role="toolbar" aria-label="Roof tools">
+      <button type="button" class="tool active" data-mode="ai" title="Tap a roof — AI outlines it">🤖 <span>AI roof</span></button>
+      <button type="button" class="tool" data-mode="draw" title="Click the roof corners yourself">✏️ <span>Draw</span></button>
+      <button type="button" class="tool" id="undoBtn" hidden title="Undo (Ctrl+Z)">↶ <span>Undo</span></button>
+      <button type="button" class="tool ok" id="finishBtn" hidden title="Finish outline (Enter)">✓ <span>Finish</span></button>
+      <button type="button" class="tool" id="clearBtn" title="Clear the roof">🗑 <span>Clear</span></button>
+    </div>
+
+    <div class="refine" id="refineBar" hidden>
+      <span>Outline not right?</span>
+      <button type="button" data-refine="1" class="chip add">＋ Add missed part</button>
+      <button type="button" data-refine="0" class="chip remove">－ Remove extra</button>
+      <button type="button" id="newRoofBtn" class="chip">↺ New roof</button>
+    </div>
+
+    <div class="hint" id="hint">Search your area, zoom in and <b>tap your roof</b></div>
+    <div class="engine" id="engineBadge" title="Roof detection engine">AI: …</div>
+  </section>
+
+  <aside class="panel" id="panel">
+    <div class="fest" id="festCounter" hidden></div>
+
+    <div class="card intro" id="introCard">
+      <h2>Your roof can make power <em>and</em> water 🌞💧</h2>
+      <ol class="steps">
+        <li><b>Find your house</b> — search your area or tap 📍</li>
+        <li><b>Tap your roof</b> — AI (Segment Anything) outlines it</li>
+        <li><b>Get your Green Roof Report</b> — solar kW, subsidy, payback, rainwater tank</li>
+      </ol>
+      <button type="button" class="btn secondary" id="demoBtn">✨ Try a demo roof (Jayanagar, Bengaluru)</button>
+    </div>
+
+    <div class="card" id="roofCard" hidden>
+      <div class="card-head">
+        <h3>🏠 Your roof</h3>
+        <span class="badge" id="methodBadge">AI</span>
+      </div>
+      <div class="roof-area"><span id="areaM2">0</span><small>m²</small> <span class="muted" id="areaSqft"></span></div>
+      <p class="muted small" id="roofNote"></p>
+      <label class="field">
+        <span>Name / address on report</span>
+        <input type="text" id="addressInput" maxlength="120" placeholder="e.g. Sharma family, 4th Block Jayanagar">
+      </label>
+      <div class="grid2">
+        <label class="field">
+          <span>Roof type</span>
+          <select id="roofType"></select>
+        </label>
+        <label class="field">
+          <span>Usable for panels: <b id="usableVal">70%</b></span>
+          <input type="range" id="usable" min="30" max="95" step="5" value="70">
+        </label>
+      </div>
+      <p class="muted tiny">Keep space for the water tank, stair room and shade from trees — 70% is typical.</p>
+    </div>
+
+    <div class="card" id="homeCard">
+      <h3>⚡ Your home</h3>
+      <div class="grid2">
+        <label class="field">
+          <span>Electricity use (units / month)</span>
+          <input type="number" id="units" min="0" max="100000" step="10" value="250" inputmode="numeric">
+        </label>
+        <label class="field">
+          <span>People in family</span>
+          <input type="number" id="family" min="1" max="100" step="1" value="4" inputmode="numeric">
+        </label>
+      </div>
+      <details class="billhelp">
+        <summary>Only know your bill amount?</summary>
+        <label class="field inline">
+          <span>Monthly bill ₹</span>
+          <input type="number" id="billAmt" min="0" step="50" placeholder="e.g. 2000" inputmode="numeric">
+        </label>
+        <p class="muted tiny">We estimate units ≈ bill ÷ ₹<span id="allInRate">8.7</span> (BESCOM average incl. fixed charges &amp; tax).</p>
+      </details>
+    </div>
+
+    <div id="results" hidden>
+      <div class="card scorecard">
+        <div class="ring-wrap">
+          <svg viewBox="0 0 120 120" class="ring" aria-hidden="true">
+            <circle cx="60" cy="60" r="50" class="ring-bg"/>
+            <circle cx="60" cy="60" r="50" class="ring-fg" id="ringFg"/>
+          </svg>
+          <div class="ring-text"><b id="scoreNum">0</b><span id="scoreGrade">Grade –</span></div>
+        </div>
+        <div class="score-copy">
+          <h3>Green Score</h3>
+          <p id="scoreLine" class="muted"></p>
+          <div class="mini-bars">
+            <div><span>☀️ Solar</span><i><em id="solarBar"></em></i><b id="solarPts">0/60</b></div>
+            <div><span>💧 Water</span><i><em id="waterBar"></em></i><b id="waterPts">0/40</b></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card solar">
+        <div class="card-head">
+          <h3>☀️ Rooftop solar</h3>
+          <span class="muted small" id="solarHead"></span>
+        </div>
+        <div class="kpis" id="solarKpis"></div>
+        <div class="chart" id="solarChart"></div>
+        <p class="muted tiny" id="solarFoot"></p>
+      </div>
+
+      <div class="card rain">
+        <div class="card-head">
+          <h3>💧 Rainwater harvesting</h3>
+          <span class="muted small" id="rainHead"></span>
+        </div>
+        <div class="kpis" id="rainKpis"></div>
+        <div class="chart" id="rainChart"></div>
+        <p class="muted tiny" id="rainFoot"></p>
+      </div>
+
+      <div class="card reportcard">
+        <h3>📄 Green Roof Report</h3>
+        <p class="muted small">One page with your roof photo, panel layout, savings, rainwater plan and a QR code.</p>
+        <div class="report-actions">
+          <a class="btn primary" id="dlBtn" href="#" download>⬇ Download PDF</a>
+          <a class="btn secondary" id="openBtn" href="#" target="_blank" rel="noopener">👁 Open</a>
+        </div>
+        <div class="qrbox">
+          <img id="qrImg" alt="QR code to download this report" width="132" height="132">
+          <div>
+            <b>Take it home 📱</b>
+            <p class="muted tiny">Scan to download this report on your phone (phone must reach this server — same Wi-Fi/hotspot, or a public link).</p>
+            <div class="share">
+              <input id="shareUrl" readonly aria-label="Share link">
+              <button type="button" class="btn ghost small" id="copyBtn">Copy link</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <details class="card assumptions" id="assumptions">
+      <summary>⚙️ Assumptions (editable) &amp; data sources</summary>
+      <div class="grid2">
+        <label class="field"><span>Electricity tariff ₹/unit</span><input type="number" id="tariff" step="0.01" min="0"></label>
+        <label class="field"><span>Installed cost ₹/kW</span><input type="number" id="costKw" step="500" min="10000"></label>
+        <label class="field"><span>Panel size (Wp)</span><input type="number" id="panelW" step="5" min="100" max="800"></label>
+        <label class="field"><span>Export rate ₹/unit <small>(blank = KERC auto)</small></span><input type="number" id="exportRate" step="0.01" min="0" placeholder="auto"></label>
+        <label class="field"><span>Tanker price ₹ (6,000 L)</span><input type="number" id="tankerPrice" step="50" min="0"></label>
+        <label class="field"><span>Heavy-rain day for tank (mm)</span><input type="number" id="designRain" step="5" min="5" max="300"></label>
+        <label class="field"><span>Annual rainfall mm <small>(blank = NASA)</small></span><input type="number" id="rainOverride" step="10" min="50" placeholder="auto"></label>
+        <label class="field check"><input type="checkbox" id="subsidy" checked> <span>PM Surya Ghar subsidy (homes)</span></label>
+      </div>
+      <p class="muted tiny" id="climateSrc"></p>
+      <ul class="sources" id="sourcesList"></ul>
+    </details>
+
+    <footer class="credits">
+      <p>Built by the Renewable Energy Club · MobileSAM (Segment Anything) + FastAPI + Leaflet.
+      Satellite imagery © Esri, Maxar, Earthstar Geographics. Climate: NASA POWER. Search: © OpenStreetMap contributors.</p>
+      <p>Screening estimate for awareness — get a site survey from an MNRE-empanelled vendor before buying.</p>
+    </footer>
+  </aside>
+</main>
+
+<div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+
+<script src="/static/vendor/leaflet/leaflet.js"></script>
+<script src="/static/js/app.js"></script>
+</body>
+</html>
