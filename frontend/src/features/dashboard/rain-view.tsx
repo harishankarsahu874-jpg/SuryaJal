@@ -1,5 +1,8 @@
 import { useState, type ReactNode } from "react"
-import { ArrowLeft, ArrowRight, CalendarDays, CloudRain, Droplets, Minus, Plus, ShieldCheck, Truck, Users, Waves } from "lucide-react"
+import {
+  ArrowLeft, ArrowRight, CalendarDays, CloudRain, Droplets, HandCoins, Info, Minus, Plus, ShieldCheck, Truck,
+  Users, Waves,
+} from "lucide-react"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { fmtIN, litres, MONTHS_LONG, rupees } from "@/lib/format"
 import { cn } from "@/lib/utils"
@@ -19,8 +22,7 @@ export function RainView() {
   const harvest = w.monthly_harvest_l[sel], demand = w.monthly_demand_l[sel], rainMm = w.monthly_rain_mm[sel]
   const fills = harvest / Math.max(1, w.tank.litres)
   const well = w.recharge_well
-  const planned = w.tank.litres + well.capacity_l
-  const meets = planned >= w.bwssb_min_l
+  const planned = w.planned_l
   const coverage = Math.round(w.coverage * 100)
   const tag = sel === w.wettest_month ? "Wettest" : sel >= 5 && sel <= 8 ? "Monsoon" : rainMm < 15 ? "Dry" : null
 
@@ -89,13 +91,63 @@ export function RainView() {
         </div>
       </SectionCard>
 
-      <SectionCard title="Bengaluru rule check" subtitle="BWSSB Act 2009 s.72A: 20 L of storage or recharge per m² of roof"
-        right={<Pill tone={meets ? "sage" : "peach"}><ShieldCheck className="size-3.5" /> {meets ? "Meets rule" : "Below rule"}</Pill>}>
+      <SectionCard title="Odisha rule check" subtitle={`${w.rule.short}`}
+        right={<Pill tone={w.meets_rule ? "sage" : "peach"}><ShieldCheck className="size-3.5" /> {w.meets_rule ? "Meets rule" : "Below rule"}</Pill>}>
         <div className="space-y-2.5">
-          <Bar label="Required" value={w.bwssb_min_l} max={Math.max(planned, w.bwssb_min_l)} className="bg-sage-300" />
-          <Bar label="Your plan" value={planned} max={Math.max(planned, w.bwssb_min_l)} className="bg-water"
-            note={`${fmtIN(w.tank.litres)} L tank + ${fmtIN(well.capacity_l)} L well`} />
+          <Bar label={`Required (${w.rule.l_per_m2} L per m² of roof)`} value={w.rule_min_l} max={Math.max(planned, w.rule_min_l)} className="bg-sage-300" />
+          <Bar label="Your plan" value={planned} max={Math.max(planned, w.rule_min_l)} className="bg-water"
+            note={`${fmtIN(w.tank.litres)} L tank + ${fmtIN(well.capacity_l)} L recharge (${well.wells > 1 ? `${well.wells} wells` : "1 well"}, ${well.diameter_m} m Ø × ${well.depth_m} m)`} />
         </div>
+        <div className="mt-3 flex flex-wrap gap-1.5">
+          <Pill tone="plain">{w.downpipes.count} × {w.downpipes.diameter_mm} mm downpipes</Pill>
+          <Pill tone="plain">First-flush valve + filter bed</Pill>
+          <Pill tone="plain">{fmtIN(w.monsoon_harvest_l)} L in the Jul–Oct monsoon ({Math.round(w.monsoon_share * 100)}%)</Pill>
+        </div>
+        <p className="mt-2.5 text-xs leading-relaxed text-muted-foreground">
+          Under the {w.rule.name}, rainwater harvesting is mandatory on every plot above {fmtIN(w.rule.mandate_plot_m2)} m²
+          and ground-water recharge on plots above {fmtIN(w.rule.recharge_plot_m2)} m². The authority checks it before the
+          completion certificate is issued.
+          {!w.meets_rule && <> You are short by <b className="text-foreground">{litres(w.rule_gap_l)}</b> — deepen the recharge well or add a second one.</>}
+        </p>
+      </SectionCard>
+
+      <SectionCard title="CHHATA subsidy" subtitle="Govt. of Odisha rooftop rainwater scheme · 50 % of the cost, up to ₹55,000"
+        right={<Pill tone={w.chhata.eligible ? "sage" : "peach"}>
+          {w.chhata.eligible ? "Eligible" : "Not eligible"}
+        </Pill>}>
+        {w.chhata.eligible ? (
+          <div className="space-y-2.5">
+            <div className="flex items-center justify-between rounded-xl bg-water-soft/70 px-3.5 py-3">
+              <div>
+                <div className="text-[11px] font-semibold tracking-wider text-water-ink/80 uppercase">Subsidy for this roof</div>
+                <div className="font-heading text-2xl leading-tight font-medium text-water-ink tabular">
+                  <CountUp value={w.chhata.subsidy} format={rupees} />
+                </div>
+              </div>
+              <span className="grid size-11 place-items-center rounded-xl bg-card text-water-ink shadow-sm"><HandCoins className="size-5" /></span>
+            </div>
+            <Bar label="System cost (estimate)" value={w.chhata.est_cost} max={w.chhata.est_cost} className="bg-sky-300" money
+              note={`${fmtIN(r.area_m2)} m² roof × ₹${fmtIN(w.chhata.cost_per_m2)}/m² — pipes, filter bed, recharge well`} />
+            <div className="flex items-baseline justify-between rounded-lg bg-muted px-3 py-2 text-sm">
+              <span className="font-medium">You pay</span>
+              <span className="font-heading font-medium tabular">{rupees(w.chhata.net_cost)}</span>
+            </div>
+            <p className="text-xs leading-relaxed text-muted-foreground">{w.chhata.note}</p>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {w.chhata.reasons.map((why) => (
+              <p key={why} className="flex items-start gap-2 rounded-lg bg-muted px-3 py-2 text-xs leading-relaxed text-foreground/80">
+                <Info className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" /> {why}
+              </p>
+            ))}
+            <p className="text-xs leading-relaxed text-muted-foreground">
+              CHHATA ({w.chhata.scheme_years}) covers roofs of {fmtIN(w.chhata.roof_min_m2)}–{fmtIN(w.chhata.roof_max_m2)} m² in
+              buildings of at most {w.chhata.max_floors} floors. Harvesting and recharge are still worth doing — and above{" "}
+              {fmtIN(w.rule.mandate_plot_m2)} m² of plot they are the law.
+            </p>
+          </div>
+        )}
       </SectionCard>
 
       <SectionCard title="Your home" subtitle="Changes update every number instantly">
@@ -112,6 +164,14 @@ export function RainView() {
             </Select>
           </label>
           <div>
+            <span className="mb-1.5 block text-xs font-semibold text-muted-foreground">Floors in the building</span>
+            <div className="flex h-11 items-center justify-between rounded-xl border bg-background px-1.5">
+              <Step onClick={() => setInput("floors", Math.max(1, inputs.floors - 1))} label="Fewer floors"><Minus /></Step>
+              <span className="inline-flex items-center gap-1.5 font-semibold tabular">{inputs.floors}</span>
+              <Step onClick={() => setInput("floors", Math.min(30, inputs.floors + 1))} label="More floors"><Plus /></Step>
+            </div>
+          </div>
+          <div>
             <span className="mb-1.5 block text-xs font-semibold text-muted-foreground">People in family</span>
             <div className="flex h-11 items-center justify-between rounded-xl border bg-background px-1.5">
               <Step onClick={() => setInput("family_size", Math.max(1, inputs.family_size - 1))} label="Fewer people"><Minus /></Step>
@@ -121,7 +181,10 @@ export function RainView() {
           </div>
         </div>
         <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
-          Solar panels don’t reduce rainwater — rain runs off the panels into the same pipes. Best month: {MONTHS_LONG[w.wettest_month]} ({litres(w.wettest_harvest_l)}).
+          Solar panels don’t reduce rainwater — rain runs off the panels into the same pipes. Best month:{" "}
+          {MONTHS_LONG[w.wettest_month]} ({litres(w.wettest_harvest_l)}). Rainfall is for{" "}
+          {r.location?.district ? `${r.location.district} district` : "your part of Odisha"} from the NASA POWER
+          2001–2020 climatology.
         </p>
       </SectionCard>
 
@@ -139,12 +202,14 @@ export function RainView() {
   )
 }
 
-function Bar({ label, value, max, className, note }: { label: string; value: number; max: number; className: string; note?: string }) {
+function Bar({ label, value, max, className, note, money }: {
+  label: string; value: number; max: number; className: string; note?: string; money?: boolean
+}) {
   return (
     <div>
       <div className="mb-1 flex items-baseline justify-between text-sm">
         <span className="font-medium">{label}</span>
-        <span className="font-heading font-medium tabular">{fmtIN(value)} L</span>
+        <span className="font-heading font-medium tabular">{money ? rupees(value) : `${fmtIN(value)} L`}</span>
       </div>
       <div className="h-2.5 overflow-hidden rounded-full bg-muted">
         <div className={cn("h-full rounded-full transition-all duration-700", className)} style={{ width: `${(value / max) * 100}%` }} />

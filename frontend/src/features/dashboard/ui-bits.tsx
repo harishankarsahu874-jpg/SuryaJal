@@ -2,6 +2,7 @@ import { useEffect, useId, useMemo, useRef, useState, type ComponentType, type R
 import { animate, motion, useMotionValue, useReducedMotion } from "motion/react"
 import { MapPinned, Sparkles } from "lucide-react"
 import { LogoMark } from "@/components/brand/logo"
+import { DEMO_ROOFS } from "@/lib/geo"
 import { MONTH_LETTERS, MONTHS } from "@/lib/format"
 import { cn } from "@/lib/utils"
 
@@ -242,7 +243,7 @@ export function SavingsTimeline({ yearly, netCost, format }: { yearly: number[];
 }
 
 // ------------------------------------------------------------------ empty state
-export function EmptyState({ onDemo, onMap }: { onDemo: () => void; onMap: () => void }) {
+export function EmptyState({ onDemo, onMap }: { onDemo: (id?: string) => void; onMap: () => void }) {
   return (
     <div className="flex flex-col items-center rounded-3xl border border-dashed border-sage-300 bg-card/70 px-6 py-10 text-center">
       <div className="relative">
@@ -254,17 +255,30 @@ export function EmptyState({ onDemo, onMap }: { onDemo: () => void; onMap: () =>
       <h3 className="font-heading mt-5 text-2xl font-medium tracking-tight">Tap your roof to begin</h3>
       <p className="mt-2 max-w-xs text-sm leading-relaxed text-muted-foreground">
         Find your house on the satellite map and tap its roof — MobileSAM outlines it in about a second, then your solar
-        and rainwater plan appears here.
+        and rainwater plan for Odisha appears here.
       </p>
       <div className="mt-6 flex w-full max-w-xs flex-col gap-2">
         <button type="button" onClick={onMap}
           className="inline-flex h-12 items-center justify-center gap-2 rounded-xl bg-primary font-semibold text-primary-foreground shadow-sm hover:bg-primary/90 lg:hidden">
           <MapPinned className="size-[18px]" /> Open the roof map
         </button>
-        <button type="button" onClick={onDemo}
+        <button type="button" onClick={() => onDemo()}
           className="inline-flex h-12 items-center justify-center gap-2 rounded-xl border bg-card font-semibold hover:bg-secondary">
-          <Sparkles className="size-[18px] text-sun-ink" /> Try the demo roof
+          <Sparkles className="size-[18px] text-sun-ink" /> Try a demo roof
         </button>
+      </div>
+      <div className="mt-4 w-full max-w-xs">
+        <div className="text-[11px] font-semibold tracking-wider text-muted-foreground uppercase">
+          Real roofs, three DISCOM zones
+        </div>
+        <div className="mt-2 flex flex-wrap justify-center gap-1.5">
+          {DEMO_ROOFS.map((d) => (
+            <button key={d.id} type="button" onClick={() => onDemo(d.id)}
+              className="rounded-full border bg-card px-2.5 py-1 text-[11px] font-semibold text-sage-800 hover:bg-secondary">
+              {d.city} · {d.discom}
+            </button>
+          ))}
+        </div>
       </div>
     </div>
   )

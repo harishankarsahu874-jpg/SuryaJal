@@ -70,8 +70,9 @@ export function ReportView() {
                 : <>Too small for panels, but it can still provide {water}.</>}
             </p>
             <div className="mt-3 space-y-1.5">
-              <MiniBar label="Solar" pts={g.solar_pts} of={60} className="bg-sun" />
-              <MiniBar label="Water" pts={g.water_pts} of={40} className="bg-water" />
+              <MiniBar label="Solar" pts={g.solar_pts} of={55} className="bg-sun" />
+              <MiniBar label="Water" pts={g.water_pts} of={35} className="bg-water" />
+              <MiniBar label="Rule" pts={g.rule_pts} of={10} className="bg-sage-400" />
             </div>
           </div>
         </div>
@@ -156,8 +157,9 @@ export function ReportView() {
       <Assumptions />
 
       <p className="px-1 pb-3 text-center text-[11px] leading-relaxed text-muted-foreground">
-        Screening estimate for awareness — get a site survey from an MNRE-empanelled vendor before buying.
-        Climate: {r.climate.source}. {rupees(s.net_cost)} after subsidy.
+        Screening estimate for awareness — get a site survey from an MNRE/OREDA-empanelled vendor and register for net
+        metering with {r.location?.discom ?? "your Odisha DISCOM"} before buying.
+        Climate: {r.climate.source}. {rupees(s.net_cost)} after the PM Surya Ghar + Odisha SFA subsidies.
       </p>
     </div>
   )
@@ -211,23 +213,47 @@ function Assumptions() {
       {open && (
         <div className="space-y-4 border-t px-4 pt-4 pb-5 sm:px-5">
           <div className="grid grid-cols-2 gap-3">
-            {num("tariff", "Tariff ₹/unit", 0.01, { min: 0 })}
+            {num("tariff", "Tariff ₹/unit (blank = OERC slabs)", 0.01, { min: 0, optional: true, placeholder: "auto" })}
+            {num("sanctioned_load_kw", "Sanctioned load (kW)", 0.5, { min: 0, max: 500 })}
             {num("cost_per_kw", "Installed cost ₹/kW", 500, { min: 10000 })}
             {num("panel_w", "Panel size (Wp)", 5, { min: 100, max: 800 })}
-            {num("export_rate", "Export ₹/unit (blank = KERC)", 0.01, { min: 0, optional: true, placeholder: "auto" })}
+            {num("export_rate", "Export ₹/unit (blank = GRIDCO APPC)", 0.01, { min: 0, optional: true, placeholder: "auto" })}
+            {num("net_meter_pct", "Net-meter credit cap %", 5, { min: 0, max: 100 })}
             {num("tanker_price", "Tanker price ₹ (6,000 L)", 50, { min: 0 })}
             {num("design_rain_mm", "Heavy-rain day (mm)", 5, { min: 5, max: 300 })}
+            {num("rwh_l_per_m2", "Rule: L per m² of roof", 5, { min: 0, max: 1000 })}
+            {num("rrhs_cost_per_m2", "Rainwater system ₹/m²", 50, { min: 0 })}
             {num("rain_override_mm", "Rain mm/yr (blank = NASA)", 10, { min: 50, optional: true, placeholder: "auto" })}
             {num("usable_pct", "Usable roof for panels %", 5, { min: 30, max: 95 })}
           </div>
-          <label className="flex items-center justify-between gap-3 rounded-xl bg-muted px-3.5 py-3">
-            <span className="text-sm font-medium">PM Surya Ghar subsidy (homes)</span>
-            <Switch checked={inputs.subsidy} onCheckedChange={(v) => setInput("subsidy", v)} />
-          </label>
+          <div className="space-y-2">
+            <label className="flex items-center justify-between gap-3 rounded-xl bg-muted px-3.5 py-3">
+              <span className="text-sm font-medium">PM Surya Ghar subsidy (central, homes)</span>
+              <Switch checked={inputs.subsidy} onCheckedChange={(v) => setInput("subsidy", v)} />
+            </label>
+            <label className="flex items-center justify-between gap-3 rounded-xl bg-muted px-3.5 py-3">
+              <span className="min-w-0 text-sm font-medium">
+                Odisha SFA state subsidy
+                <span className="block text-xs font-normal text-muted-foreground">₹25,000/kW up to 2 kW + ₹10,000 for the 3rd kW, max ₹60,000</span>
+              </span>
+              <Switch checked={inputs.state_subsidy} onCheckedChange={(v) => setInput("state_subsidy", v)} />
+            </label>
+            <label className="flex items-center justify-between gap-3 rounded-xl bg-muted px-3.5 py-3">
+              <span className="min-w-0 text-sm font-medium">
+                CHHATA rainwater subsidy
+                <span className="block text-xs font-normal text-muted-foreground">Govt. of Odisha: 50% of the cost, up to ₹55,000</span>
+              </span>
+              <Switch checked={inputs.chhata} onCheckedChange={(v) => setInput("chhata", v)} />
+            </label>
+          </div>
           {result && (
             <p className="text-xs leading-relaxed text-muted-foreground">
               Climate for this roof: {result.climate.source}. Average sunlight {result.climate.ghi_avg.toFixed(2)} kWh/m²/day,
               performance ratio {result.solar.pr_avg.toFixed(2)} (temperature-corrected).
+              {result.location?.district && <> Served by {result.location.discom_name} ({result.location.district} district).</>}
+              Tariff: {result.solar.tariff_override
+                ? `your flat ₹${result.solar.tariff.toFixed(2)}/unit`
+                : `OERC domestic slabs, all-in ₹${result.solar.tariff.toFixed(2)}/unit at ${fmtIN(result.solar.annual_units / 12)} units/month`}.
             </p>
           )}
           <ul className="space-y-1.5 text-xs leading-relaxed text-muted-foreground">

@@ -14,11 +14,12 @@ import { useAuth } from "@/lib/auth"
 import { fmtIN } from "@/lib/format"
 import { cn } from "@/lib/utils"
 
-const DEMO_GEN = [288, 295, 339, 326, 319, 267, 247, 251, 266, 262, 237, 250]
-const DEMO_RAIN = [457, 826, 3087, 10568, 20239, 14053, 18410, 20754, 27941, 25956, 10346, 2744]
+// the bundled Bhubaneswar demo roof: 177 m², 2.70 kW, 250 units/month (NASA POWER 2001-2020)
+const DEMO_GEN = [277, 296, 363, 384, 394, 301, 260, 266, 276, 300, 275, 259]
+const DEMO_RAIN = [1634, 2529, 3501, 6143, 15403, 31709, 51669, 51389, 43317, 24644, 3523, 1447]
 
 export default function LandingPage({ onReplayIntro }: { onReplayIntro: () => void }) {
-  useEffect(() => { document.title = "SuryaJal — AI rooftop solar + rainwater planner" }, [])
+  useEffect(() => { document.title = "SuryaJal — AI rooftop solar + rainwater planner for Odisha" }, [])
   return (
     <div className="min-h-dvh bg-background">
       <SiteHeader transparent />
@@ -80,7 +81,8 @@ function Hero() {
           </motion.h1>
           <motion.p {...fade(0.2)} className="mt-6 max-w-xl text-[17px] leading-relaxed text-muted-foreground">
             Tap your house on a satellite map. On-device AI outlines the roof in about a second, then NASA climate data sizes
-            your solar plant and rainwater tank — with the PM Surya Ghar subsidy and Bengaluru’s BWSSB rule built in.
+            your solar plant and rainwater tank — with the OERC slab tariff, the PM Surya Ghar + Odisha SFA subsidies, net
+            metering and the Odisha rainwater rule built in.
           </motion.p>
           <motion.div {...fade(0.28)} className="mt-8 flex flex-col gap-3 sm:flex-row">
             <Button asChild className="h-12 rounded-xl px-6 text-[15px] font-semibold shadow-lg shadow-sage-700/20">
@@ -89,6 +91,11 @@ function Hero() {
             <Button asChild variant="outline" className="h-12 rounded-xl bg-card px-6 text-[15px] font-semibold">
               <Link to="/app?demo=1"><Sparkles className="text-sun-ink" /> Try the demo roof</Link>
             </Button>
+          </motion.div>
+          <motion.div {...fade(0.32)} className="mt-6 flex flex-wrap gap-1.5">
+            {["TPCODL", "TPNODL", "TPWODL", "TPSODL", "All 30 districts"].map((t) => (
+              <span key={t} className="rounded-full border bg-card px-2.5 py-1 text-[11px] font-semibold text-sage-700">{t}</span>
+            ))}
           </motion.div>
           <motion.ul {...fade(0.36)} className="mt-8 flex flex-wrap gap-x-5 gap-y-2 text-sm text-muted-foreground">
             {["No sign-up needed", "Free PDF report", "Works on any phone"].map((t) => (
@@ -129,13 +136,13 @@ function PhoneShowcase() {
         <FloatChip icon={ScanLine} tone="sun" title="Roof found" value="in 1.2 s" delay={0} />
       </motion.div>
       <motion.div {...chip(0.85)} className="absolute top-[40%] -right-2 sm:-right-10">
-        <FloatChip icon={SolarPanel} tone="sage" title="2.16 kWp" value="4 panels" delay={1.2} />
+        <FloatChip icon={SolarPanel} tone="sage" title="2.70 kWp" value="5 panels · Bhubaneswar" delay={1.2} />
       </motion.div>
       <motion.div {...chip(1)} className="absolute bottom-[24%] -left-3 sm:-left-14">
-        <FloatChip icon={Droplets} tone="water" title="1.55 lakh L" value="rain / year" delay={0.6} />
+        <FloatChip icon={Droplets} tone="water" title="2.37 lakh L" value="rain / year" delay={0.6} />
       </motion.div>
       <motion.div {...chip(1.15)} className="absolute -right-1 bottom-[8%] sm:-right-10">
-        <FloatChip icon={Hourglass} tone="sage" title="3.7 yrs" value="payback" delay={1.8} />
+        <FloatChip icon={Hourglass} tone="sage" title="1.3 yrs" value="payback with subsidy" delay={1.8} />
       </motion.div>
     </div>
   )
@@ -178,7 +185,7 @@ function Counter({ to, format }: { to: number; format: (v: number) => string }) 
 function StatsStrip() {
   const items: { v: ReactNode; l: string; icon: ComponentType<{ className?: string }> }[] = [
     { v: <Counter to={1.2} format={(v) => `${v.toFixed(1)} s`} />, l: "AI roof outline on a laptop CPU", icon: BrainCircuit },
-    { v: <Counter to={78000} format={(v) => `₹${fmtIN(v)}`} />, l: "Max PM Surya Ghar subsidy", icon: IndianRupee },
+    { v: <Counter to={138000} format={(v) => `₹${fmtIN(v)}`} />, l: "Max subsidy at 3 kW: PM Surya Ghar + Odisha SFA", icon: IndianRupee },
     { v: <Counter to={25} format={(v) => `${Math.round(v)} yrs`} />, l: "Savings modelled, with degradation", icon: Zap },
     { v: <Counter to={60} format={(v) => `< ${Math.round(v)} s`} />, l: "From address to PDF report", icon: FileText },
   ]
@@ -237,11 +244,13 @@ function Features() {
       <div className="mx-auto max-w-6xl px-4 sm:px-6">
         <SectionHead kicker="Two modules, one roof" title="Solar and rainwater, sized for your home" />
         <div className="mt-12 grid gap-4 lg:grid-cols-2">
-          <ModuleCard tone="sun" icon={Sun} title="Rooftop solar" lead="Recommended kW, panel count and a month-by-month generation curve from NASA POWER sunlight data."
-            points={["Cost after PM Surya Ghar subsidy", "Payback, IRR and 25-year savings", "Pick your own panel count — see it change live", "CO₂ avoided and trees equivalent"]}
+          <ModuleCard tone="sun" icon={Sun} title="Rooftop solar" lead="Recommended kW, panel count and a month-by-month generation curve from NASA POWER sunlight data for your district."
+            points={["Your OERC bill before and after, slab by slab", "Cost after PM Surya Ghar + Odisha SFA subsidy",
+              "Net metering: credits, the 90% cap and March settlement", "Payback, IRR, 25-year savings, CO₂ and trees equivalent"]}
             bars={DEMO_GEN} />
           <ModuleCard tone="water" icon={Droplets} title="Rainwater harvesting" lead="Roof area × rainfall × runoff coefficient gives your yearly harvest — month by month."
-            points={["Storage tank and recharge-well size", "Tanker and water-bill savings", "BWSSB 20 L per m² rule check", "Tap a month to watch your tank fill"]}
+            points={["Storage tank and recharge-well size", "Odisha rule check: 60 L per m² of roof (ODA Rules 2020)",
+              "CHHATA subsidy: 50% of the cost, up to ₹55,000", "Tanker and water-bill savings"]}
             bars={DEMO_RAIN} />
         </div>
         <div className="mt-4 grid items-center gap-8 overflow-hidden rounded-3xl border bg-gradient-to-br from-sage-50 to-sage-100 p-6 sm:p-10 lg:grid-cols-[1fr_auto]">
@@ -295,7 +304,7 @@ function ModuleCard({ tone, icon: Icon, title, lead, points, bars }: {
             transition={{ delay: 0.2 + i * 0.04, duration: 0.6, ease: [0.22, 1, 0.36, 1] }} />
         ))}
       </div>
-      <div className="mt-1.5 flex justify-between text-[10px] font-medium text-muted-foreground"><span>Jan</span><span>Demo roof · Jayanagar</span><span>Dec</span></div>
+      <div className="mt-1.5 flex justify-between text-[10px] font-medium text-muted-foreground"><span>Jan</span><span>Demo roof · Bhubaneswar</span><span>Dec</span></div>
     </motion.div>
   )
 }
@@ -312,10 +321,10 @@ function Specs() {
   const specs = [
     { icon: BrainCircuit, k: "Roof AI", v: sp ? `${sp.model.name}` : "MobileSAM (Segment Anything)", s: sp ? `${sp.model.runtime} · ${sp.model.size_mb} MB · ${sp.model.warm ? "warm" : "warming"}` : "ONNX Runtime · CPU" },
     { icon: Satellite, k: "Imagery", v: sp?.imagery.source ?? "Esri World Imagery", s: `Zoom ${sp?.imagery.max_zoom ?? 19} ≈ ${sp?.imagery.m_per_px ?? 0.29} m per pixel` },
-    { icon: CloudSun, k: "Climate", v: `${sp?.climate.source ?? "NASA POWER"} ${sp?.climate.period.replace("-", "–") ?? "2001–2020"}`, s: `${sp?.climate.offline_cities ?? 16} Indian cities cached for offline demos` },
-    { icon: IndianRupee, k: "Subsidy", v: "PM Surya Ghar", s: "₹30k/kW up to 2 kW + ₹18k for the 3rd kW (max ₹78k)" },
-    { icon: Zap, k: "Tariffs", v: `BESCOM ₹${sp?.solar.tariff ?? 6.82}/unit`, s: "KERC export ₹3.89 · ₹1.96–2.58 with subsidy (Aug 2026)" },
-    { icon: Waves, k: "Water rule", v: sp?.water.rule ?? "BWSSB Act 2009 s.72A", s: `${sp?.water.l_per_m2 ?? 20} L storage per m² of roof · ${sp?.water.lpcd ?? 135} L/person/day` },
+    { icon: CloudSun, k: "Climate", v: `${sp?.climate.source ?? "NASA POWER"} ${sp?.climate.period.replace("-", "–") ?? "2001–2020"}`, s: `${sp?.climate.offline_cities ?? 32} Odisha towns — every district — cached for offline demos` },
+    { icon: IndianRupee, k: "Subsidies", v: "PM Surya Ghar + Odisha SFA", s: "₹78k central + ₹60k state at 3 kW · up to ₹1.38 lakh" },
+    { icon: Zap, k: "Tariff", v: sp?.solar.tariff_label ?? "OERC domestic slabs ₹2.90–₹6.10/unit", s: `Export settled at ₹${sp?.solar.export_rate ?? 3.59}/unit (GRIDCO APPC) · ${Math.round((sp?.solar.net_meter_cap ?? 0.9) * 100)}% credit cap` },
+    { icon: Waves, k: "Water rule", v: sp?.water.rule ?? "ODA Rules 2020 · 6 m³ per 100 m² of roof", s: `${sp?.water.l_per_m2 ?? 60} L per m² of roof · CHHATA subsidy up to ₹${fmtIN(sp?.water.chhata?.max_subsidy ?? 55000)}` },
     { icon: Leaf, k: "Grid CO₂", v: `${sp?.solar.co2_kg_per_kwh ?? 0.71} kg per unit`, s: "CEA CO₂ Baseline Database v21" },
     { icon: Cpu, k: "Stack", v: "FastAPI · React · Leaflet", s: "Tailwind CSS · shadcn/ui · motion · reportlab" },
     { icon: ShieldCheck, k: "Privacy", v: "No sign-up needed", s: "Optional accounts: SQLite + scrypt, tokens hashed" },

@@ -85,10 +85,74 @@ export function niceStep(v: number) {
   return 10 * e
 }
 
-/** Demo roof - a real Jayanagar (Bengaluru) house outlined by MobileSAM. */
-export const DEMO_ROOF = {
-  name: "Demo roof · Jayanagar, Bengaluru",
-  poly: [[12.9285874, 77.5820667], [12.9284642, 77.5820639], [12.9284589, 77.5820694], [12.9284562, 77.5821079],
-    [12.9284589, 77.5821931], [12.9284642, 77.5821986], [12.9284964, 77.5822041], [12.9285821, 77.5822041],
-    [12.9285874, 77.5821931], [12.9285901, 77.5821464]] as LatLng[],
+/**
+ * Demo roofs - real house footprints from OpenStreetMap in three of Odisha's DISCOM
+ * zones, so the "Load demo roof" button always works offline (no imagery, no NASA POWER,
+ * no Nominatim needed).
+ */
+export interface DemoRoof {
+  id: string
+  name: string
+  city: string
+  district: string
+  discom: string
+  lat: number
+  lon: number
+  zoom: number
+  poly: LatLng[]
 }
+
+export const DEMO_ROOFS: DemoRoof[] = [
+  {
+    id: "bhubaneswar",
+    name: "Demo roof · Ward 27, Bhubaneswar",
+    city: "Bhubaneswar", district: "Khurda", discom: "TPCODL",
+    lat: 20.2954, lon: 85.81397, zoom: 19,
+    // ~140 m² house, South West Zone, Bhubaneswar Municipal Corporation
+    poly: [[20.2954465, 85.8139218], [20.2953165, 85.8139877], [20.2953639, 85.8140812],
+      [20.2954939, 85.8140152]] as LatLng[],
+  },
+  {
+    id: "cuttack",
+    name: "Demo roof · Friends Colony, Cuttack",
+    city: "Cuttack", district: "Cuttack", discom: "TPCODL",
+    lat: 20.46467, lon: 85.87466, zoom: 19,
+    // L-shaped ~18 x 14 m house
+    poly: [[20.4645817, 85.8746642], [20.4646428, 85.8747010], [20.4646883, 85.8747161],
+      [20.4647307, 85.8747328], [20.4647479, 85.8746307], [20.4646977, 85.8746089],
+      [20.4646585, 85.8745905], [20.4646428, 85.8746424], [20.4645895, 85.8746139]] as LatLng[],
+  },
+  {
+    id: "berhampur",
+    name: "Demo roof · Berhampur (Ganjam)",
+    city: "Berhampur", district: "Ganjam", discom: "TPSODL",
+    lat: 19.30617, lon: 84.79661, zoom: 19,
+    // ~13 x 10 m house, southern Odisha
+    poly: [[19.3061409, 84.7966584], [19.3062323, 84.7965990], [19.3062186, 84.7965754],
+      [19.3061826, 84.7965988], [19.3061651, 84.7965684], [19.3061147, 84.7965583],
+      [19.3061096, 84.7966044]] as LatLng[],
+  },
+]
+
+/** The default demo roof (Bhubaneswar). */
+export const DEMO_ROOF = DEMO_ROOFS[0]
+
+/** Odisha cities the map offers as one-tap jumps: [name, lat, lon, zoom]. */
+export const ODISHA_CITIES: { name: string; lat: number; lon: number; zoom: number; district: string }[] = [
+  { name: "Bhubaneswar", lat: 20.2961, lon: 85.8245, zoom: 13, district: "Khurda" },
+  { name: "Cuttack", lat: 20.4625, lon: 85.8830, zoom: 13, district: "Cuttack" },
+  { name: "Rourkela", lat: 22.2600, lon: 84.8400, zoom: 13, district: "Sundargarh" },
+  { name: "Berhampur", lat: 19.3131, lon: 84.7941, zoom: 13, district: "Ganjam" },
+  { name: "Sambalpur", lat: 21.4670, lon: 83.9840, zoom: 13, district: "Sambalpur" },
+  { name: "Puri", lat: 19.8048, lon: 85.8181, zoom: 13, district: "Puri" },
+  { name: "Balasore", lat: 21.4991, lon: 86.9317, zoom: 13, district: "Balasore" },
+  { name: "Baripada", lat: 21.9336, lon: 86.7239, zoom: 13, district: "Mayurbhanj" },
+  { name: "Bhadrak", lat: 21.0545, lon: 86.4960, zoom: 13, district: "Bhadrak" },
+  { name: "Angul", lat: 20.8386, lon: 85.0870, zoom: 13, district: "Angul" },
+  { name: "Keonjhar", lat: 21.6318, lon: 85.5590, zoom: 13, district: "Keonjhar" },
+  { name: "Koraput", lat: 18.8140, lon: 82.7100, zoom: 13, district: "Koraput" },
+]
+
+/** Default map view: Bhubaneswar, the capital. */
+export const ODISHA_CENTER: LatLng = [20.2961, 85.8245]
+export const ODISHA_ZOOM = 13

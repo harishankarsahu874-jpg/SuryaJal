@@ -1,8 +1,20 @@
-# ☀️💧 SuryaJal — AI Rooftop Solar + Rainwater Planner
+# ☀️💧 SuryaJal — AI Rooftop Solar + Rainwater Planner for Odisha
 
 **Find your house on the satellite map → tap the roof → AI outlines it → get your solar kW, subsidy, payback,
 rainwater tank and a one‑page *Green Roof Report* with a QR code — in under a minute.**
 
+Every rule, tariff and subsidy in SuryaJal is **Odisha's**: the OERC domestic slab tariff and electricity duty, net
+metering with TPCODL / TPNODL / TPWODL / TPSODL, the PM Surya Ghar central subsidy **plus Odisha's own State
+Financial Assistance**, the Odisha Development Authorities rainwater rule (6 m³ of recharge per 100 m² of roof) and
+the State's **CHHATA** rooftop‑rainwater subsidy. Climate data is bundled for all **30 districts**.
+
+> **v2.0 (Sep 2026) — the Odisha rebuild:** OERC telescopic slab tariff (₹2.90 / 4.70 / 5.70 / 6.10 per unit) with the
+> ₹20/kW fixed charge and 4 % electricity duty, bills computed *before* and *after* solar instead of a flat rate, the
+> OERC 90 %-of-consumption net‑metering cap and March settlement at the GRIDCO APPC feed‑in tariff, Odisha SFA on top of
+> PM Surya Ghar (up to ₹1.38 lakh at 3 kW), district + DISCOM auto‑detection for any roof, NASA POWER climatology for all
+> 30 districts, the ODA Rules 2020 rainwater norm (60 L per m² of roof) and the CHHATA subsidy, three Odisha demo roofs
+> (Bhubaneswar, Cuttack, Berhampur) and a map that starts on Bhubaneswar with one‑tap city chips.
+>
 > **v1.1 (Sep 2026):** new React website and mobile‑first dashboard in a calm sage theme, a new SuryaJal logo, a
 > "pre‑flight" loading screen that checks the AI, climate data and imagery live, the scroll‑driven *StackSpread*
 > photo story on the landing page, what‑if sliders (bill, panel count), IRR and a 25‑year savings timeline, a
@@ -10,8 +22,9 @@ rainwater tank and a one‑page *Green Roof Report* with a QR code — in under 
 > except save roofs. The original no‑build tool lives on at `/classic`.
 
 Software project for the Renewable Energy Club tech fest (Nov 2026). It combines SIH25065 (Ministry of Jal Shakti:
-on‑spot rooftop rainwater‑harvesting assessment) with rooftop‑solar planning under **PM Surya Ghar: Muft Bijli Yojana**,
-and adds AI roof detection plus Karnataka‑specific rules (BESCOM tariff, KERC export rate, BWSSB rainwater law).
+on‑spot rooftop rainwater‑harvesting assessment) with rooftop‑solar planning under **PM Surya Ghar: Muft Bijli Yojana**
+and **Odisha's State Financial Assistance**, and adds AI roof detection plus Odisha‑specific rules (OERC tariff and net
+metering, ODA rainwater norms, CHHATA subsidy).
 
 | Mobile dashboard: Roof Map · Solar · Rainwater · Report |
 |---|
@@ -34,15 +47,16 @@ and adds AI roof detection plus Karnataka‑specific rules (BESCOM tariff, KERC 
 | 🤖 **AI roof detection** | Tap a roof. **MobileSAM** (Segment Anything, mobile version, run as ONNX on the CPU) outlines it in about 1 s. **＋ Add part / － Remove** taps refine the outline in about 0.1 s because the image analysis is reused. |
 | ✏️ **Manual fallback** | Draw the roof corners yourself. You can drag the corners of any outline, AI or manual, to fine‑tune it. |
 | 🧩 **Auto panel layout** | Places real 540 Wp panels on *your* roof shape with a 0.5 m edge gap, shown on the map and in the PDF. It also checks that the panels physically fit. |
-| ☀️ **Solar** | Uses NASA POWER monthly sunlight with a temperature‑corrected performance ratio. Gives recommended kW, number of panels, month‑wise units, cost, PM Surya Ghar subsidy, KERC export income, payback, 25‑year savings, CO₂ saved and a trees equivalent. |
-| 💧 **Rainwater** | Uses area × rainfall × runoff coefficient. Gives month‑wise litres, storage‑tank size, a recharge well sized to the BWSSB 20 L/m² rule, days of family water and tankers avoided. |
-| 🏅 **Green Score** | 0–100 score and grade (60 points for solar coverage, 40 for rainwater coverage). |
+| ☀️ **Solar** | Uses NASA POWER monthly sunlight with a temperature‑corrected performance ratio. Gives recommended kW, number of panels, month‑wise units, cost, **PM Surya Ghar + Odisha SFA** subsidy, your **OERC bill before and after**, net‑metering credits, payback, 25‑year savings, CO₂ saved and a trees equivalent. |
+| 💧 **Rainwater** | Uses area × rainfall × runoff coefficient. Gives month‑wise litres, storage‑tank size, a recharge well sized to the **Odisha 60 L/m² rule**, the downpipes the ODA Rules require, days of family water, tankers avoided and the **CHHATA** subsidy this roof qualifies for. |
+| 🗺️ **District + DISCOM** | Any roof in the State is matched to its district and to TPCODL / TPNODL / TPWODL / TPSODL, so the report says who bills you and where to apply for net metering. |
+| 🏅 **Green Score** | 0–100 score and grade (55 points for solar coverage, 35 for rainwater coverage, 10 for meeting the Odisha recharge rule). |
 | 📄 **Green Roof Report** | One A4 page showing the roof photo with outline and panels, KPIs, two monthly charts, assumptions and a QR code. |
 | 📱 **Take it home** | An on‑screen QR code downloads the PDF on the visitor's phone. Share links keep the whole state in the URL. |
-| 📴 **Fest‑proof** | Climate data is cached, and 16 Indian cities are bundled offline. Satellite tiles are cached on disk. A demo‑roof button covers you when a visitor can't find their house. |
+| 📴 **Fest‑proof** | Climate data is cached, and NASA POWER climatology for **all 30 Odisha districts** (32 towns) is bundled offline. Satellite tiles are cached on disk. Three demo roofs — Bhubaneswar, Cuttack and Berhampur — cover you when a visitor can't find their house. |
 | 🌍 **Fest counter** | "Today: 23 roofs · 71 kW · 18 lakh L" is shown live and anonymously; only totals are stored. |
 | 🎛 **What‑if planner** | Drag your monthly units or pick your own panel count (up to what fits on the roof) and every number, the panel layout and the PDF update live. "Only know your bill?" converts ₹ to units. |
-| 📈 **Money view** | Capital cost, PM Surya Ghar subsidy, net cost, payback, **IRR** and an interactive **25‑year savings timeline** with the break‑even year. |
+| 📈 **Money view** | Capital cost, PM Surya Ghar + Odisha SFA subsidies, net cost, the OERC bill before and after solar, export settled in March, payback, **IRR** and an interactive **25‑year savings timeline** with the break‑even year — plus a warning when the plant is bigger than your sanctioned load or bigger than the 90 % cap can credit. |
 | 🪣 **Tank simulator** | Tap any month on the rain chart and the tank animation fills to show how that month's rain compares with your tank. |
 | 🔐 **Accounts (optional)** | Sign up / sign in / sign out, "keep me signed in", sign out on all devices, delete account. Signed‑in users save roofs to **My roofs** and reopen or re‑download them. |
 | 🚦 **Pre‑flight loader** | The animated logo plays while the app *really* checks the server, warms MobileSAM, and verifies climate data, Esri imagery and the subsidy/water rules, printing each spec as it comes online. It shows once per browser session; add `?intro` to replay it. |
@@ -78,7 +92,8 @@ python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 Without the model files the app still runs, using a basic OpenCV region‑growing fallback, but MobileSAM is much better.
 
-Run the tests (42 of them: formulas, geometry, panel layout, segmentation on a synthetic image, API, PDF, accounts and My roofs):
+Run the tests (59 of them: OERC tariff slabs, both subsidies, net‑metering cap, solar and rainwater formulas, CHHATA
+eligibility, district/DISCOM lookup, geometry, panel layout, segmentation on a synthetic image, API, PDF, accounts and My roofs):
 ```bash
 pytest -q
 ```
@@ -92,25 +107,34 @@ pytest -q
 2. **Use a phone hotspot.** Connect the laptop and visitors' phones to it. Visitors can then scan the on‑screen QR and the PDF
    downloads on their phone from `http://<laptop-ip>:8000`. `run.sh` prints this address; on Windows, run `ipconfig`.
 3. **Pre‑visit likely areas.** Open the college area and a few neighbourhoods visitors come from, so tiles are cached.
-4. **If the internet dies,** climate data falls back to bundled NASA data for 16 cities. The satellite map needs internet, so keep
+4. **If the internet dies,** climate data falls back to the bundled NASA POWER data for all 30 Odisha districts. The satellite map needs internet, so keep
    `docs/sample_report.pdf` and the screenshots ready as backup.
 5. **Want a public link?** Deploy to Hugging Face Spaces (below). The QR then works from any phone, anywhere.
 
 ### 60‑second pitch
-> Every Bengaluru roof gets about **5.5 kWh of sunlight per m² per day** and about **850 mm of rain a year**, but families don't know what
-> that's worth. With SuryaJal you find your house and tap your roof. **Segment Anything** outlines it in about a second,
-> and you instantly see how many panels fit, the cost after the **PM Surya Ghar** subsidy, the payback, and how much
-> rainwater you can store and recharge under **BWSSB rules**. Scan the QR and take your Green Roof Report home.
+> An Odisha roof gets about **4.8–5.1 kWh of sunlight per m² per day** and **1,300–1,850 mm of rain a year**, but families
+> don't know what that's worth. With SuryaJal you find your house and tap your roof. **Segment Anything** outlines it in about
+> a second, and you instantly see how many panels fit, the cost after the **PM Surya Ghar subsidy plus Odisha's SFA** (up to
+> ₹1.38 lakh at 3 kW), your **OERC bill before and after**, the payback, and how much rainwater you must store and recharge
+> under the **Odisha Development Authorities rules** — with the **CHHATA** subsidy you can claim for it. It even tells you
+> which DISCOM bills you. Scan the QR and take your Green Roof Report home.
 
 ### Judge Q&A cheat‑sheet
-- **How accurate is the area?** Zoom‑19 imagery is about 0.29 m per pixel in Bengaluru, so roof area is typically within ±5–10%.
+- **How accurate is the area?** Zoom‑19 imagery is about 0.28 m per pixel at Bhubaneswar's latitude, so roof area is typically within ±5–10%.
   Error comes from trees overhanging the roof and tall buildings leaning in the photo. The corners can be dragged to correct it.
 - **Why MobileSAM and not the original SAM?** MobileSAM has about 10 M parameters against SAM‑H's 600 M+, uses the same point‑prompt
   interface, and runs on a plain laptop CPU in about 1 s with no GPU.
-- **Where do the numbers come from?** NASA POWER 20‑year climatology, PM Surya Ghar subsidy slabs, the CEA grid CO₂ factor,
-  KERC 2026 export tariffs and the BWSSB rule. All are listed in the app under *Assumptions* and are editable.
+- **Where do the numbers come from?** NASA POWER 20‑year climatology for all 30 districts, PM Surya Ghar subsidy slabs,
+  Odisha's SFA (Cabinet decision, 03.01.2025), the CEA grid CO₂ factor, the OERC retail supply tariff order for FY 2026‑27
+  and OERC's net‑metering orders, GRIDCO's APPC for the export settlement, the Odisha Development Authorities (Planning &
+  Building Standards) Rules 2020 and the CHHATA scheme guidelines. All are listed in the app under *Assumptions* and are editable.
+- **Why is the export income often zero?** That is Odisha's rule, not a bug: OERC caps credited generation at **90 % of your
+  yearly consumption** and anything above that is "free energy" at the March settlement. So the honest advice is to size the
+  plant to your own bill — SuryaJal says so and shows how many units would lapse.
 - **What's new compared with existing calculators?** AI roof outline, auto panel layout on the real roof shape, solar *and*
-  water in one flow, Karnataka‑specific rules, a Green Score, and a QR take‑home report. It keeps working even with bad Wi‑Fi.
+  water in one flow, a real **telescopic OERC bill** before and after solar instead of a flat ₹/unit, Odisha's state subsidy,
+  district/DISCOM detection, the ODA rainwater rule and CHHATA, a Green Score, and a QR take‑home report. It keeps working
+  even with bad Wi‑Fi.
 - **Shading?** Not modelled yet. The *usable %* slider covers tanks, stair rooms and trees; see future upgrades.
 
 ---
@@ -150,35 +174,55 @@ POST /api/segment                        POST /api/assess                    GET
 **Solar**
 - Monthly energy: `E_m = kWp × GHI_m × days_m × PR_m`
 - Performance ratio: `PR_m = 0.83 × [1 − 0.0035 × (T_air,m + 20 − 25)]`, i.e. PVWatts‑style system losses plus heat loss.
-  This gives PR ≈ 0.77 and about 4.2 units/day per kW in Bengaluru.
+  This gives PR ≈ 0.75 and about **3.7 units/day per kW in Bhubaneswar** (1,352 kWh/kWp/year; 3.9–4.1 in western Odisha).
 - Size: `min(roof limit, household need)`
   - Roof limit = `usable area ÷ 10 m² per kW`, also capped by how many panels fit geometrically.
   - Household need = `annual units ÷ yearly units per kW`.
-- Savings (monthly net metering): `self‑used units × tariff + exported units × export rate`
-- Subsidy: `₹30,000 × min(kW,2) + ₹18,000 × (min(kW,3) − 2)`, capped at ₹78,000.
+- **Bill, not a flat rate.** Odisha's domestic tariff is telescopic, so SuryaJal bills the home twice:
+  `bill = energy(units, slabs) + ₹20/kW/month + 4 % duty` for the units you *would* use, and again for the units you
+  still import after solar. `saving = bill_before − bill_after + export_paid × feed‑in tariff`. A solar unit therefore
+  displaces your **dearest** unit (₹6.10 above 400 units/month, ₹2.90 in the first slab) — not an average one.
+  Kutir Jyoti homes (≤ 30 units/month) pay a flat ₹70, which the model also handles.
+- **Net metering (OERC).** Credits carry forward inside the financial year; generation is credited only up to
+  **90 % of the year's consumption**, and whatever is above that on 31 March is "free energy" (reset to zero in April).
+  Fixed charges and government levies are always payable. Plant size ≤ sanctioned load (max 500 kW) and ≤ 75 % of the
+  DT capacity; SuryaJal warns you when a load enhancement is needed.
+- Subsidies (both apply to homes, up to 3 kW):
+  - PM Surya Ghar CFA: `₹30,000 × min(kW,2) + ₹18,000 × (min(kW,3) − 2)`, capped at ₹78,000.
+  - Odisha SFA: `₹25,000 × min(kW,2) + ₹10,000 × (min(kW,3) − 2)`, capped at ₹60,000 → **₹1,38,000 at 3 kW**.
+  - Never more than the system actually costs; each can be switched off in *Assumptions*.
 
 **Rainwater**
 - Harvest: `litres = roof m² × rain mm × runoff C` (1 mm on 1 m² = 1 L). Solar panels don't reduce this.
-- Storage tank holds one heavy‑rain day: `area × 50 mm × C`, rounded up to a standard tank size.
-- Recharge well: 1 m Ø RCC rings (785 L per metre depth), sized to the BWSSB minimum `20 L × roof m²`.
+- Storage tank holds one heavy‑rain day: `area × 100 mm × C`, rounded up to a standard tank size (Odisha's monsoon
+  delivers 60–80 % of the year's rain between July and October, and 100 mm days are common).
+- Recharge well: 1 m Ø RCC rings (785 L per metre depth), sized to the **Odisha norm `60 L × roof m²`**
+  (= 6 m³ per 100 m² of roof), plus the two 100 mm downpipes per 100 m² the rules ask for.
 - Water demand: family × 135 L/person/day (CPHEEO norm).
+- **CHHATA subsidy:** `min(50 % of the system cost, ₹55,000)` for roofs of 50–200 m² in buildings of at most three
+  floors, with a recharge unit compulsory. SuryaJal checks eligibility and explains why a roof misses out.
 
 | Default | Value | Source |
 |---|---|---|
 | Roof area per kW | 10 m² | PM Surya Ghar national portal FAQ |
-| Subsidy | ₹30k/kW up to 2 kW + ₹18k for 3rd kW, max ₹78k | PM Surya Ghar |
-| Installed cost | ₹65,000/kW | 2026 market: 3 kW on‑grid ≈ ₹1.65–2.25 lakh |
-| Tariff | ₹6.82/unit | BESCOM LT‑1 from May 2026 (₹5.90 + 0.36 + 0.56) |
-| Export rate | ₹1.96 / 2.14 / 2.58 (with subsidy), ₹3.89 (without) | KERC order, 25 Aug 2026 |
+| Central subsidy | ₹30k/kW up to 2 kW + ₹18k for 3rd kW, max ₹78k | PM Surya Ghar: Muft Bijli Yojana |
+| Odisha subsidy (SFA) | ₹25k/kW up to 2 kW + ₹10k for 3rd kW, max ₹60k | State Cabinet decision, 03.01.2025 (FY 2024‑25 → 2026‑27) |
+| Installed cost | ₹55,000/kW | 2026 Odisha market, OREDA‑empanelled vendors (~₹48k–65k/kW for 1–5 kW) |
+| Tariff | telescopic slabs ₹2.90 / 4.70 / 5.70 / 6.10 per unit, ₹20/kW/month fixed, 4 % duty extra | OERC retail supply tariff, FY 2026‑27 (order 24.03.2026, unchanged for the 5th year) |
+| Kutir Jyoti | flat ₹70/month up to 30 units | OERC domestic tariff |
+| Export / settlement | ₹3.59 per unit, credited up to 90 % of yearly consumption | GRIDCO APPC FY 2026‑27; OERC net‑metering orders |
 | Grid CO₂ | 0.71 kg/unit | CEA CO₂ Baseline Database v21 (FY 2024‑25) |
-| Runoff C | RCC 0.85, metal 0.90, Mangalore tile 0.75, cement sheet 0.80 | typical engineering values |
-| Rainwater law | 20 L per m² of roof (+10 L per m² paved) | BWSSB (Amendment) Act 2009, s.72A |
+| Runoff C | RCC 0.85, metal/GI 0.90, clay tile 0.75, cement sheet 0.80 | typical engineering values |
+| Rainwater rule | 60 L per m² of roof (6 m³ per 100 m²), mandatory above 100 m² plot, recharge above 225 m² | Odisha Development Authorities (Planning & Building Standards) Rules, 2020 |
+| CHHATA subsidy | 50 % of cost or ₹55,000, whichever is less; roof 50–200 m², ≤ 3 floors | Dept. of Water Resources, Govt. of Odisha (FY 2022‑23 → 2026‑27) |
+| Rainwater system cost | ₹600 per m² of roof | Odisha market for pipes + filter bed + recharge pit |
 | Water demand | 135 L/person/day | CPHEEO manual |
-| Climate | monthly sunlight, rain, temperature | NASA POWER climatology 2001–2020 |
+| Climate | monthly sunlight, rain, temperature for 32 Odisha towns | NASA POWER climatology 2001–2020 |
 
 **Known limitations (be honest with judges):**
-- NASA POWER uses a grid of roughly 50 km. For Bengaluru it gives 843 mm of rain against the IMD normal of about 970 mm, so use the
-  *annual rainfall* override for local accuracy.
+- NASA POWER uses a grid of roughly 0.25° (~25 km). For Bhubaneswar it gives about 1,573 mm of rain a year against the IMD
+  normal of roughly 1,500 mm — close, but coastal and southern Odisha vary a lot (Paradeep ~1,850 mm, Bhawanipatna ~1,335 mm),
+  so use the *annual rainfall* override for local accuracy. Nearby towns can share a grid cell (Cuttack ≈ Bhubaneswar).
 - Shading from neighbouring buildings is not modelled.
 - Imagery may be a few years old; use *Draw* for new buildings.
 - Costs and tariffs change, so they are editable.
@@ -190,8 +234,11 @@ POST /api/segment                        POST /api/assess                    GET
 | Method | Path | Purpose |
 |---|---|---|
 | GET | `/api/health` | Status and AI engine (`mobilesam` or `opencv`) |
-| GET | `/api/config` | Defaults, roof types, sources |
-| GET | `/api/geocode?q=` | Place search (Nominatim proxy, throttled to 1 req/s, cached) |
+| GET | `/api/config` | Defaults, roof types, sources, plus the Odisha block (DISCOMs, tariff slabs, rainwater rule, CHHATA, 32 towns) |
+| GET | `/api/odisha/table` | Sunlight, rainfall, district and DISCOM for every bundled Odisha town |
+| GET | `/api/odisha/locate?lat=&lon=` | District + DISCOM (TPCODL / TPNODL / TPWODL / TPSODL) for a point |
+| GET | `/api/odisha/tariff?units=&load_kw=` | Itemised OERC domestic bill for a month |
+| GET | `/api/geocode?q=` | Place search (Nominatim proxy, throttled to 1 req/s, cached, biased to Odisha and tagged with district + DISCOM) |
 | GET | `/api/reverse?lat=&lon=` | Short address for the report |
 | POST | `/api/segment` | `{points:[{lat,lon,label}], zoom}` → roof polygon, area, confidence |
 | POST | `/api/assess` | `{polygon:[[lat,lon],…], monthly_units, family_size, …}` → solar, rain, score, panel layout |
@@ -223,8 +270,10 @@ suryajal/
 │   ├── segment.py     MobileSAM ONNX + OpenCV fallback + mask→polygon
 │   ├── tiles.py       Esri tile fetch, cache, placeholder detection
 │   ├── layout.py      auto solar-panel packing
-│   ├── solar.py       sizing, economics, CO₂
-│   ├── rain.py        harvest, tank, recharge well, Green Score
+│   ├── tariff.py      OERC telescopic domestic bill (slabs, fixed charge, duty, Kutir Jyoti)
+│   ├── odisha.py      districts, DISCOM lookup, bundled NASA POWER table for the State
+│   ├── solar.py       sizing, economics (bill before/after + net metering), subsidies, CO₂
+│   ├── rain.py        harvest, tank, recharge well, ODA rule check, CHHATA, Green Score
 │   ├── climate.py     NASA POWER + cache + offline fallback
 │   ├── geo.py         Web-Mercator, polygon area, encoded polyline
 │   ├── report.py      one-page PDF (reportlab) + QR
@@ -235,10 +284,10 @@ suryajal/
 ├── static/
 │   ├── site/          built website + dashboard (committed, served at / and /app)
 │   └── index.html …   classic no-build tool (served at /classic)
-├── data/climate_fallback.json   NASA data for 16 Indian cities
+├── data/climate_fallback.json   NASA POWER climatology for 32 Odisha towns (all 30 districts) + district/DISCOM
 ├── models/            MobileSAM ONNX (downloaded)
 ├── scripts/           download_models.py, prefetch_climate.py
-├── tests/             42 pytest tests
+├── tests/             59 pytest tests
 ├── docs/              screenshots + sample report
 ├── run.sh · run.bat · Dockerfile · requirements.txt
 ```
@@ -321,9 +370,12 @@ SHA‑256 hashes, failed logins are throttled, and redirects after sign‑in onl
 ## 🔭 Future upgrades
 - **Shadow analysis:** sun path plus building heights (e.g., Google Open Buildings 2.5D) to find truly shade‑free area.
 - **Obstacle detection:** automatically find black water tanks and stair rooms (fine‑tuned YOLO) and use that instead of the usable‑% slider.
-- **Kannada / Hindi interface** with voice read‑out of the report.
+- **Odia / Hindi interface** with voice read‑out of the report.
 - **Hybrid/battery and EV‑charging sizing;** add a live IoT generation dashboard (links with the club's hardware projects).
-- **Ward‑level heat‑map** of rooftop solar and rainwater potential by batch‑processing OpenStreetMap building footprints.
+- **Ward‑level heat‑map** of rooftop solar and rainwater potential by batch‑processing OpenStreetMap building footprints,
+  ward by ward for BMC, CMC and the other Odisha ULBs in the CHHATA scheme.
+- **DISCOM workflow:** pre‑filled net‑metering and OREDA/CHHATA application forms per DISCOM, with the sanctioned‑load
+  enhancement the plant needs.
 
 ## 🙏 Credits & licences
 - [MobileSAM](https://github.com/ChaoningZhang/MobileSAM) (Apache‑2.0), with the ONNX export by [Acly/MobileSAM](https://huggingface.co/Acly/MobileSAM) (MIT).
@@ -339,4 +391,5 @@ SHA‑256 hashes, failed logins are throttled, and redirects after sign‑in onl
 - Search by [Nominatim](https://nominatim.org) / © OpenStreetMap contributors. The app respects the 1 request/s usage policy.
 - DejaVu fonts (free licence).
 
-*SuryaJal gives screening estimates for awareness. Get a site survey from an MNRE‑empanelled vendor before buying.*
+*SuryaJal gives screening estimates for awareness. Get a site survey from an MNRE/OREDA‑empanelled vendor, apply on
+pmsuryaghar.gov.in, and register for net metering with your Odisha DISCOM before buying.*

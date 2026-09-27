@@ -1,33 +1,61 @@
-"""Rooftop-solar sizing and economics.
+"""Rooftop-solar sizing and economics for Odisha.
 
 Monthly energy  E_m = kWp x GHI_m x days_m x PR_m
 PR_m            = system_eff x [1 + temp_coeff x (T_air_m + cell_rise - 25)]
 System size     = min(what the roof can hold, what the household needs)
-Savings         = self-used units x tariff + exported units x export rate (monthly net metering)
+Money           = the OERC domestic bill **without** solar minus the bill **with** solar
+                  (telescopic slabs, so a solar unit displaces your dearest unit),
+                  plus the export settled at the OERC feed-in tariff, subject to the
+                  90 %-of-consumption net-metering cap.
+Subsidy         = PM Surya Ghar central assistance + Odisha's State Financial Assistance.
 """
 from __future__ import annotations
 
 import math
 from typing import Dict, List, Optional
 
-from .config import DAYS_IN_MONTH, KERC_EXPORT_NO_SUBSIDY, KERC_EXPORT_WITH_SUBSIDY
+from .config import (CFA_CAP, CFA_PER_KW_FIRST_2, CFA_THIRD_KW, DAYS_IN_MONTH,
+                     OERC_EXPORT_FIT, OERC_MAX_NM_KW, OERC_NET_METER_CAP, SFA_CAP,
+                     SFA_PER_KW_FIRST_2, SFA_THIRD_KW)
+from .tariff import flat_rate_override, marginal_rate, monthly_bill
 
 
+# ------------------------------------------------------------------ subsidies
 def pm_surya_ghar_subsidy(kw: float) -> float:
-    """Central subsidy: Rs 30,000/kW for the first 2 kW, Rs 18,000 for the 3rd kW, max Rs 78,000."""
+    """Central financial assistance: Rs 30,000/kW for the first 2 kW, Rs 18,000 for the
+    3rd kW, capped at Rs 78,000 (PM Surya Ghar: Muft Bijli Yojana)."""
     kw = max(0.0, kw)
-    return 30000 * min(kw, 2.0) + 18000 * max(0.0, min(kw, 3.0) - 2.0)
+    return min(CFA_CAP, CFA_PER_KW_FIRST_2 * min(kw, 2.0)
+               + CFA_THIRD_KW * max(0.0, min(kw, 3.0) - 2.0))
 
 
-def kerc_export_rate(kw: float, subsidy: bool) -> float:
-    if not subsidy:
-        return KERC_EXPORT_NO_SUBSIDY
-    for upto, rate in KERC_EXPORT_WITH_SUBSIDY:
-        if kw <= upto:
-            return rate
-    return KERC_EXPORT_WITH_SUBSIDY[-1][1]
+def odisha_state_subsidy(kw: float) -> float:
+    """Odisha State Financial Assistance on top of the central subsidy: Rs 25,000/kW up to
+    2 kW + Rs 10,000 for the 3rd kW, capped at Rs 60,000 (Cabinet decision 03.01.2025,
+    3 lakh households, FY 2024-25 to FY 2026-27)."""
+    kw = max(0.0, kw)
+    return min(SFA_CAP, SFA_PER_KW_FIRST_2 * min(kw, 2.0)
+               + SFA_THIRD_KW * max(0.0, min(kw, 3.0) - 2.0))
 
 
+def subsidies(kw: float, central: bool = True, state: bool = True) -> Dict:
+    """Both subsidies, never more than the system actually costs."""
+    cfa = pm_surya_ghar_subsidy(kw) if central else 0.0
+    sfa = odisha_state_subsidy(kw) if state else 0.0
+    return {"central": cfa, "state": sfa, "total": cfa + sfa,
+            "capped_at": CFA_CAP if central else 0.0, "sfa_cap": SFA_CAP if state else 0.0}
+
+
+# ------------------------------------------------------------------ net metering
+def net_meter_limit(kw: float, sanctioned_load_kw: float) -> Dict:
+    """OERC allows net metering up to the sanctioned load (max 500 kW)."""
+    limit = max(0.0, min(float(sanctioned_load_kw or 0.0), OERC_MAX_NM_KW))
+    return {"ok": kw <= limit + 1e-9, "limit_kw": limit, "kw": kw,
+            "need_kw": round(max(0.0, kw - limit), 2),
+            "state_cap_kw": OERC_MAX_NM_KW}
+
+
+# ------------------------------------------------------------------ physics
 def monthly_pr(t2m: List[float], system_eff: float, temp_coeff: float, cell_rise: float) -> List[float]:
     return [system_eff * (1 + temp_coeff * max(0.0, t + cell_rise - 25.0)) for t in t2m]
 
@@ -90,6 +118,15 @@ def irr(cashflows: List[float]) -> Optional[float]:
     return (lo + hi) / 2
 
 
+# ------------------------------------------------------------------ the assessment
+def _bill(units: float, p: Dict) -> Dict:
+    """One month's OERC domestic bill, or the user's flat rate if they typed one."""
+    override = flat_rate_override(units, p.get("tariff"), p.get("sanctioned_load_kw", 0.0))
+    if override is not None:
+        return override
+    return monthly_bill(units, p.get("sanctioned_load_kw", 0.0))
+
+
 def assess_solar(roof_area_m2: float, climate: Dict, p: Dict,
                  layout_max_panels: Optional[int] = None) -> Dict:
     ypk = yield_per_kwp(climate["ghi"], climate["t2m"], p)
@@ -101,18 +138,49 @@ def assess_solar(roof_area_m2: float, climate: Dict, p: Dict,
 
     gen = [kw * y for y in ypk]
     cons = [monthly_units] * 12
-    self_used = [min(g, c) for g, c in zip(gen, cons)]
-    exported = [max(0.0, g - c) for g, c in zip(gen, cons)]
-    subsidy_on = bool(p["subsidy"])
+    load = float(p.get("sanctioned_load_kw") or 0.0)
+
+    # ---- month by month: what you import, what you export, what each bill looks like
+    imports = [max(0.0, c - g) for g, c in zip(gen, cons)]
+    exports = [max(0.0, g - c) for g, c in zip(gen, cons)]
+    bill_before_m = [_bill(c, p)["total"] for c in cons]
+    bill_after_m = [_bill(i, p)["total"] for i in imports]
+    bill_saving_m = [b - a for b, a in zip(bill_before_m, bill_after_m)]
+
+    self_used = sum(min(g, c) for g, c in zip(gen, cons))
+    total_export = sum(exports)
+
+    # ---- OERC net metering: credits carry forward inside the financial year, and only
+    #      90 % of the year's consumption can be offset by solar generation.
+    cap = float(p.get("net_meter_cap", OERC_NET_METER_CAP))
+    creditable_gen = cap * annual_units
+    export_paid = min(total_export, max(0.0, creditable_gen - self_used))
+    lapsed = max(0.0, total_export - export_paid)
+    subsidy_on = bool(p.get("subsidy", True))
+    state_on = bool(p.get("state_subsidy", True))
     export_rate = p["export_rate"] if p.get("export_rate") not in (None, "", "auto") \
-        else kerc_export_rate(kw, subsidy_on)
-    tariff = float(p["tariff"])
-    savings_m = [s * tariff + e * export_rate for s, e in zip(self_used, exported)]
+        else OERC_EXPORT_FIT
+    export_income = export_paid * float(export_rate)
+    savings_m = [s for s in bill_saving_m]
+    annual_savings = sum(savings_m) + export_income
+
     annual_gen = sum(gen)
-    annual_savings = sum(savings_m)
+    bill_before = sum(bill_before_m)
+    bill_after = sum(bill_after_m)
+    units_after = sum(imports)
+    tariff_used = p.get("tariff")
+    effective_rate = bill_before / annual_units if annual_units > 0 else 0.0
+    marginal = marginal_rate(monthly_units) if tariff_used in (None, "", 0) else float(tariff_used)
 
     gross_cost = kw * p["cost_per_kw"]
-    subsidy = min(pm_surya_ghar_subsidy(kw), gross_cost) if subsidy_on else 0.0
+    sub = subsidies(kw, subsidy_on, state_on)
+    subsidy = min(sub["total"], gross_cost)
+    # keep the split proportional if the system is cheaper than the paper subsidy
+    if sub["total"] > 0 and subsidy < sub["total"]:
+        k = subsidy / sub["total"]
+        sub_central, sub_state = sub["central"] * k, sub["state"] * k
+    else:
+        sub_central, sub_state = sub["central"], sub["state"]
     net_cost = gross_cost - subsidy
     payback = net_cost / annual_savings if annual_savings > 0 else None
 
@@ -124,7 +192,6 @@ def assess_solar(roof_area_m2: float, climate: Dict, p: Dict,
     irr_value = irr([-net_cost] + yearly_savings) if net_cost > 0 else None
     co2_t_year = annual_gen * p["co2_kg_per_kwh"] / 1000.0
     co2_t_life = co2_t_year * life_factor
-    bill_before = annual_units * tariff
 
     # Full-roof potential (if the family wants to maximise export income)
     full_kw = size["roof_max_kw"]
@@ -137,20 +204,38 @@ def assess_solar(roof_area_m2: float, climate: Dict, p: Dict,
         "monthly_yield_per_kwp": ypk,
         "monthly_gen": gen,
         "monthly_consumption": cons,
+        "monthly_import": imports,
+        "monthly_export": exports,
+        "monthly_bill_before": bill_before_m,
+        "monthly_bill_after": bill_after_m,
         "monthly_savings": savings_m,
         "annual_gen": annual_gen,
         "annual_units": annual_units,
-        "self_used": sum(self_used),
-        "exported": sum(exported),
+        "annual_units_after": units_after,
+        "self_used": self_used,
+        "exported": total_export,
+        "export_paid": export_paid,
+        "export_lapsed": lapsed,
+        "export_income": export_income,
+        "net_meter_cap": cap,
+        "credit_limit_units": creditable_gen,
         "coverage": min(1.0, annual_gen / annual_units) if annual_units > 0 else 1.0,
-        "tariff": tariff,
+        # money
+        "tariff": effective_rate,                         # all-in Rs/unit you pay today
+        "tariff_marginal": marginal,                      # Rs/unit your last unit costs
+        "tariff_override": bool(tariff_used not in (None, "", 0)),
+        "sanctioned_load_kw": load,
         "export_rate": export_rate,
+        "export_rate_auto": p.get("export_rate") in (None, "", "auto"),
         "gross_cost": gross_cost,
         "subsidy": subsidy,
+        "subsidy_central": sub_central,
+        "subsidy_state": sub_state,
         "net_cost": net_cost,
+        "bill_before": bill_before,
+        "bill_after": bill_after,
         "annual_savings": annual_savings,
         "monthly_savings_avg": annual_savings / 12.0,
-        "bill_before": bill_before,
         "payback_years": payback,
         "lifetime_years": life,
         "lifetime_savings": lifetime_savings,
@@ -162,5 +247,6 @@ def assess_solar(roof_area_m2: float, climate: Dict, p: Dict,
         "trees_equiv": co2_t_year * 1000.0 / p["kg_co2_per_tree_year"],
         "full_roof_kw": full_kw,
         "full_roof_gen": full_gen,
+        "net_metering": net_meter_limit(kw, load),
         "pr_avg": annual_ypk / max(1e-9, sum(g * d for g, d in zip(climate["ghi"], DAYS_IN_MONTH))),
     }

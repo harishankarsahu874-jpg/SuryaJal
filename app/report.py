@@ -18,7 +18,8 @@ from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.pdfgen import canvas
 
-from .config import ESRI_ATTRIBUTION, FONTS_DIR, MONTH_LABELS
+from .config import (ESRI_ATTRIBUTION, FONTS_DIR, MONTH_LABELS, OERC_DOMESTIC_SLABS,
+                     OERC_DUTY_PCT, OERC_FIXED_CHARGE_PER_KW, TARIFF_FY)
 from .geo import latlon_to_px, meters_per_px
 
 F, FB = "DejaVu", "DejaVu-Bold"
@@ -36,6 +37,14 @@ BLUE_D = HexColor("#0369A1")
 BLUE_BG = HexColor("#EAF6FD")
 GREEN = HexColor("#16A34A")
 SUB = HexColor("#CBD5E1")
+
+
+def _slab_txt() -> str:
+    """₹2.90 up to 50 units · ₹4.70 up to 200 · ₹5.70 up to 400 · ₹6.10 above."""
+    out = []
+    for upto, rate in OERC_DOMESTIC_SLABS:
+        out.append(f"₹{rate:.2f}" + ("" if upto == float("inf") else f" up to {upto:.0f}u"))
+    return " · ".join(out) + " per unit, telescopic"
 
 
 def _register_fonts():
@@ -343,7 +352,8 @@ def _bar_chart(c, x, y, w, h, values: List[float], color, line: Optional[List[fl
     c.restoreState()
 
 
-def _score_ring(c, cx, cy, r, score: int, grade: str, solar_pts: int, water_pts: int):
+def _score_ring(c, cx, cy, r, score: int, grade: str, solar_pts: int, water_pts: int,
+                rule_pts: int = 0):
     c.saveState()
     c.setLineWidth(7)
     c.setStrokeColor(LIGHT)
@@ -366,7 +376,8 @@ def _score_ring(c, cx, cy, r, score: int, grade: str, solar_pts: int, water_pts:
     c.drawCentredString(cx, cy - r - 16, "GREEN SCORE")
     c.setFont(F, 6.5)
     c.setFillColor(GRAY)
-    c.drawCentredString(cx, cy - r - 25, f"Solar {solar_pts}/60 · Water {water_pts}/40")
+    c.drawCentredString(cx, cy - r - 25,
+                        f"Solar {solar_pts}/55 · Water {water_pts}/35 · Rule {rule_pts}/10")
     c.restoreState()
 
 
@@ -394,8 +405,11 @@ def build_report_pdf(a: Dict, thumb: Optional[Image.Image], share_url: str,
     c = canvas.Canvas(buf, pagesize=A4)
     c.setTitle("SuryaJal - Green Roof Report")
     c.setAuthor("SuryaJal")
-    c.setSubject("Rooftop solar and rainwater harvesting potential")
+    c.setSubject("Rooftop solar and rainwater harvesting potential in Odisha")
     s, r, g, p = a["solar"], a["rain"], a["score"], a["params"]
+    loc = a.get("location") or {}
+    place = " · ".join(x for x in (loc.get("district") and f"{loc['district']} district",
+                                   loc.get("discom")) if x)
 
     # ---------------- header band
     c.setFillColor(NAVY)
@@ -406,7 +420,8 @@ def build_report_pdf(a: Dict, thumb: Optional[Image.Image], share_url: str,
     c.drawString(M + 52, H - 38, "Green Roof Report")
     c.setFont(F, 8.5)
     c.setFillColor(SUB)
-    c.drawString(M + 52, H - 53, "SuryaJal · AI rooftop solar + rainwater assessment")
+    c.drawString(M + 52, H - 53,
+                 "SuryaJal · AI rooftop solar + rainwater assessment for Odisha")
     c.setFont(FB, 8.5)
     c.setFillColor(white)
     c.drawRightString(W - M, H - 34, f"Report #{a['report_id']}")
@@ -469,6 +484,7 @@ def build_report_pdf(a: Dict, thumb: Optional[Image.Image], share_url: str,
     c.setFont(F, 8)
     c.setFillColor(INK)
     info = [
+        f"District / DISCOM: {place or 'Odisha'}" if place else "State: Odisha",
         f"Usable for solar: {s['usable_area_m2']:.0f} m² ({p['usable_fraction'] * 100:.0f}% of roof)",
         f"Roof type: {r['roof_type_label']} (runoff {r['runoff_c']:.2f})",
         f"Outline: {method_label}",
@@ -478,7 +494,8 @@ def build_report_pdf(a: Dict, thumb: Optional[Image.Image], share_url: str,
     for ln in info:
         c.drawString(tx, yy, ln)
         yy -= 11.5
-    _score_ring(c, W - M - 60, top - 62, 40, g["score"], g["grade"], g["solar_pts"], g["water_pts"])
+    _score_ring(c, W - M - 60, top - 62, 40, g["score"], g["grade"], g["solar_pts"],
+                g["water_pts"], g.get("rule_pts", 0))
 
     # ---------------- solar section
     y0 = 555
@@ -486,14 +503,20 @@ def build_report_pdf(a: Dict, thumb: Optional[Image.Image], share_url: str,
     lim = "roof space" if s["limited_by"] == "roof" else "your electricity use"
     _section(c, M, y0, W - 2 * M, "Rooftop Solar",
              f"{s['kw']:.2f} kW · {s['panels']} panels · sized by {lim} · "
-             f"{s['daily_units_per_kw']:.1f} units/day per kW here", AMBER, AMBER_BG, "sun")
+             f"{s['daily_units_per_kw']:.1f} units/day per kW in {loc.get('district') or 'Odisha'}",
+             AMBER, AMBER_BG, "sun")
     payback = f"{s['payback_years']:.1f} years" if s["payback_years"] else "—"
     tiles = [
         ("System size", f"{s['kw']:.2f} kW", f"{s['panels']} × {p['panel_w']} Wp panels"),
         ("Units per year", inr(s["annual_gen"]), f"≈ {s['annual_gen'] / 12:.0f} units / month"),
-        ("Bill savings / year", rupees(s["annual_savings"]), f"≈ ₹{inr(s['monthly_savings_avg'])} per month"),
-        ("Cost after subsidy", rupees(s["net_cost"]), f"{rupees(s['gross_cost'])} − {rupees(s['subsidy'])} PM Surya Ghar"),
-        ("Payback", payback, f"then ~{max(0, 25 - (s['payback_years'] or 25)):.0f} years of free power"),
+        ("Bill savings / year", rupees(s["annual_savings"]),
+         f"≈ ₹{inr(s['monthly_savings_avg'])}/month on OERC slabs"),
+        ("Your bill today", rupees(s["bill_before"]),
+         f"{inr(s['annual_units'])} units/yr → {rupees(s['bill_after'])} with solar"),
+        ("Cost after subsidy", rupees(s["net_cost"]),
+         f"{rupees(s['gross_cost'])} − {rupees(s['subsidy_central'])} CFA − {rupees(s['subsidy_state'])} Odisha SFA"),
+        ("Payback", payback,
+         f"then ~{max(0, s['lifetime_years'] - (s['payback_years'] or s['lifetime_years'])):.0f} years of free power"),
         (f"{s['lifetime_years']}-year savings", rupees(s["lifetime_savings"]), f"net gain {rupees(s['lifetime_profit'])}"),
         ("CO₂ avoided", f"{s['co2_t_year']:.1f} t / year", f"{s['co2_t_life']:.0f} t over {s['lifetime_years']} years"),
         ("Like planting", f"{s['trees_equiv']:.0f} trees", "at ~20 kg CO₂ per tree per year"),
@@ -507,20 +530,25 @@ def build_report_pdf(a: Dict, thumb: Optional[Image.Image], share_url: str,
     # ---------------- rain section
     y1 = 330
     _section(c, M, y1, W - 2 * M, "Rainwater Harvesting",
-             f"{r['annual_rain_mm']:.0f} mm rain/year · harvest = area × rain × {r['runoff_c']:.2f}",
+             f"{r['annual_rain_mm']:.0f} mm rain/year in {loc.get('district') or 'Odisha'} · "
+             f"harvest = area × rain × {r['runoff_c']:.2f}",
              BLUE, BLUE_BG, "drop")
     wl = r["recharge_well"]
+    ch = r["chhata"]
     wells = f"{wl['wells']} × " if wl["wells"] > 1 else ""
     tiles = [
         ("Rainwater per year", litres(r["annual_harvest_l"]), f"from {r['annual_rain_mm']:.0f} mm of rain"),
         ("Water for", f"{r['days_of_water']:.0f} days", f"family of {p['family_size']} at {p['lpcd']} L/person/day"),
         ("Storage tank", f"{inr(r['tank']['litres'])} L", f"captures a {p['design_rain_mm']:.0f} mm rain day"),
         ("Recharge well", f"{wells}{wl['diameter_m']:.0f} m Ø × {wl['depth_m']:.1f} m",
-         f"holds {inr(wl['capacity_l'])} L (BWSSB 20 L/m²)"),
-        ("BWSSB minimum", f"{inr(r['bwssb_min_l'])} L", "storage or recharge by law (Bengaluru)"),
+         f"holds {inr(wl['capacity_l'])} L (ODA: 6 m³ per 100 m² roof)"),
+        ("Odisha rule", f"{inr(r['rule_min_l'])} L",
+         f"{r['rule']['l_per_m2']:.0f} L/m² of roof · ODA Rules 2020"
+         + (" · met" if r["meets_rule"] else f" · short by {litres(r['rule_gap_l'])}")),
+        ("CHHATA subsidy", rupees(ch["subsidy"]) if ch["eligible"] else "not eligible",
+         (f"50% of ~{rupees(ch['est_cost'])} cost · Govt. of Odisha"
+          if ch["eligible"] else (ch["reasons"][0][:44] if ch["reasons"] else "—"))),
         ("Tankers avoided", f"{r['tankers_saved']:.0f} / year", f"of {inr(p['tanker_litres'])} L each"),
-        ("Water money saved", rupees(r["tanker_savings"]), f"at ₹{inr(p['tanker_price'])} per tanker"),
-        ("Wettest month", MONTH_LABELS[r["wettest_month"]], f"{litres(r['wettest_harvest_l'])} in that month"),
     ]
     for i, (lb, val, sub) in enumerate(tiles):
         col, row = i % 4, i // 4
@@ -541,14 +569,23 @@ def build_report_pdf(a: Dict, thumb: Optional[Image.Image], share_url: str,
         ("How we calculated", True),
         (f"Solar: NASA POWER sunlight ({a['climate']['ghi_avg']:.2f} kWh/m²/day) × temperature-corrected performance "
          f"ratio {s['pr_avg']:.2f}; {p['m2_per_kw']:.0f} m² per kW (PM Surya Ghar portal); {p['panel_w']} Wp panels.", False),
-        (f"Money: ₹{inr(p['cost_per_kw'])}/kW installed; subsidy ₹30k/kW up to 2 kW + ₹18k for the 3rd kW (max ₹78k); "
-         f"tariff ₹{s['tariff']:.2f}/unit; surplus exported at ₹{s['export_rate']:.2f}/unit (KERC 2026).", False),
+        (f"Money: ₹{inr(p['cost_per_kw'])}/kW installed; PM Surya Ghar ₹30k/kW up to 2 kW + ₹18k for the 3rd kW "
+         f"(max ₹78k) plus Odisha SFA ₹25k/kW + ₹10k (max ₹60k); OERC domestic tariff {TARIFF_FY} "
+         f"({_slab_txt()}) + ₹{OERC_FIXED_CHARGE_PER_KW:.0f}/kW/month fixed + {OERC_DUTY_PCT:.0f}% "
+         f"electricity duty; surplus settled at ₹{s['export_rate']:.2f}/unit (GRIDCO APPC), credited up to "
+         f"{s['net_meter_cap'] * 100:.0f}% of your yearly use.", False),
         (f"CO₂: CEA grid factor {p['co2_kg_per_kwh']} kg/unit; panels lose {p['degradation'] * 100:.1f}%/year; "
          f"tariff held flat (conservative).", False),
         (f"Rain: 1 mm on 1 m² = 1 litre; runoff {r['runoff_c']:.2f}; tank sized for a {p['design_rain_mm']:.0f} mm "
-         f"rain day; recharge well sized to BWSSB's 20 L per m² of roof.", False),
+         f"rain day; recharge well sized to the Odisha Development Authorities Rules 2020 norm of 6 m³ per "
+         f"100 m² of roof ({r['rule']['l_per_m2']:.0f} L/m²), with {r['downpipes']['count']} × "
+         f"{r['downpipes']['diameter_mm']:.0f} mm downpipes.", False),
+        (f"CHHATA (Govt. of Odisha, {ch['scheme_years']}): 50% of the system cost or ₹{inr(ch['max_subsidy'])}, "
+         f"whichever is less, for roofs of {ch['roof_min_m2']:.0f}–{ch['roof_max_m2']:.0f} m² and at most "
+         f"{ch['max_floors']} floors; a recharge unit is compulsory. Apply at echhata.odisha.gov.in.", False),
         ("This is a screening estimate for awareness, not an engineering design. Before buying, get a site survey "
-         "from an MNRE-empanelled vendor and apply on pmsuryaghar.gov.in.", False),
+         "from an MNRE/OREDA-empanelled vendor, apply on pmsuryaghar.gov.in and register for net metering with "
+         f"{loc.get('discom') or 'your Odisha DISCOM'}.", False),
         (f"Climate: {a['climate']['source']}. {ESRI_ATTRIBUTION}. Made with SuryaJal (MobileSAM + FastAPI).", False),
     ]
     yy = 116
