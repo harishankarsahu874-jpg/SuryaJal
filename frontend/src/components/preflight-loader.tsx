@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ComponentType } from "react"
-import { AnimatePresence, motion, useReducedMotion, useSpring, useTransform } from "motion/react"
+import { motion, useReducedMotion, useSpring, useTransform } from "motion/react"
 import {
   BrainCircuit, CheckCircle2, CircleAlert, CloudSun, Droplets, IndianRupee, Loader2, RotateCcw,
   Satellite, Server, XCircle,
@@ -34,16 +34,6 @@ const INITIAL: Check[] = [
   { id: "water", label: "Rainwater rules", icon: Droplets, status: "wait", detail: "ODA Rules 2020 · CHHATA" },
 ]
 
-const FACTS = [
-  "1 kW of rooftop solar in Bhubaneswar makes about 3.7 units of electricity a day.",
-  "A 150 m² roof in Odisha catches around 2 lakh litres of rain every year.",
-  "PM Surya Ghar pays up to ₹78,000 — and Odisha's SFA adds up to ₹60,000 more.",
-  "Odisha asks for 60 litres of rain storage or recharge for every m² of roof.",
-  "All four Odisha DISCOMs bill the same telescopic slabs: ₹2.90 to ₹6.10 per unit.",
-  "Every solar unit avoids about 0.71 kg of CO₂ from the grid.",
-  "MobileSAM finds a roof outline in about a second — on a laptop CPU.",
-]
-
 // Esri tile over Odisha (z5) - proves the browser can reach the imagery.
 const TILE = "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/5/14/23"
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
@@ -75,7 +65,6 @@ export function PreflightLoader({ onDone }: { onDone: () => void }) {
   const reduce = useReducedMotion()
   const [checks, setChecks] = useState<Check[]>(INITIAL)
   const [phase, setPhase] = useState<"running" | "done" | "failed">("running")
-  const [fact, setFact] = useState(0)
   const [run, setRun] = useState(0)
   const finished = useRef(false)
 
@@ -186,12 +175,6 @@ export function PreflightLoader({ onDone }: { onDone: () => void }) {
       alive = false
     }
   }, [run, reduce, set, finish])
-
-  // rotating facts
-  useEffect(() => {
-    const t = setInterval(() => setFact((f) => (f + 1) % FACTS.length), 2600)
-    return () => clearInterval(t)
-  }, [])
 
   // Esc / Enter skips
   useEffect(() => {
@@ -308,7 +291,7 @@ export function PreflightLoader({ onDone }: { onDone: () => void }) {
           ))}
         </ul>
 
-        {phase === "failed" ? (
+        {phase === "failed" && (
           <div className="mt-5 flex gap-2">
             <button
               type="button"
@@ -324,22 +307,6 @@ export function PreflightLoader({ onDone }: { onDone: () => void }) {
             >
               Continue anyway
             </button>
-          </div>
-        ) : (
-          <div className="mt-5 h-10 w-full overflow-hidden text-center">
-            <AnimatePresence mode="wait">
-              <motion.p
-                key={fact}
-                className="text-[13px] leading-snug text-white/60"
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -10 }}
-                transition={{ duration: 0.35 }}
-              >
-                <span className="font-semibold text-amber-200/90">Did you know? </span>
-                {FACTS[fact]}
-              </motion.p>
-            </AnimatePresence>
           </div>
         )}
       </div>
