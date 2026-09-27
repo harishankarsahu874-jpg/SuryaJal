@@ -495,8 +495,8 @@
     $('#solarPts').textContent = `${g.solar_pts}/55`;
     $('#waterPts').textContent = `${g.water_pts}/35`;
     $('#rulePts').textContent = `${g.rule_pts || 0}/10`;
-    const water = w.coverage >= 1 ? `all of your family’s water (${Math.round(w.coverage * 100)}% of yearly use)`
-      : `${Math.round(w.coverage * 100)}% of your family’s yearly water`;
+    const water = w.coverage >= 1 ? `all of the building’s water (${Math.round(w.coverage * 100)}% of yearly use)`
+      : `${Math.round(w.coverage * 100)}% of the building’s yearly water`;
     const loc = r.location || {};
     $('#scoreLine').textContent = (s.panels
       ? `Your roof can cover ${Math.round(s.coverage * 100)}% of your electricity and ${water}.`
@@ -559,7 +559,7 @@
       kpi('Downpipes needed', `${w.downpipes.count} × ${w.downpipes.diameter_mm} mm`, 'ODA Rules: 2 per 100 m² of roof'),
     ].join('');
     $('#rainChart').innerHTML = barChart(w.monthly_harvest_l, {
-      color: '#0EA5E9', line: w.monthly_demand_l, barName: 'Rainwater harvest (L)', lineName: 'Family water use', unit: 'L',
+      color: '#0EA5E9', line: w.monthly_demand_l, barName: 'Rainwater harvest (L)', lineName: 'Water use', unit: 'L',
     });
     $('#rainFoot').textContent = 'Solar panels don’t reduce rainwater — rain runs off the panels into the same pipes. ' +
       `${Math.round(w.monsoon_share * 100)}% of your harvest lands in the Jul–Oct monsoon. Climate: ${r.climate.source}.`;

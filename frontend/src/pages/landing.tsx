@@ -211,7 +211,7 @@ function HowItWorks() {
   const steps = [
     { icon: Search, t: "Find your house", d: "Search your area or landmark, paste coordinates, or tap “my location”. The satellite map zooms to your street." },
     { icon: ScanLine, t: "Tap the roof", d: "MobileSAM (Segment Anything) traces the outline in about a second. Add or remove parts with a tap — or draw it by hand." },
-    { icon: FileText, t: "Get your plan", d: "Solar kW, panels, subsidy, payback and the rain tank + recharge well appear instantly — with a one-page PDF and QR code." },
+    { icon: FileText, t: "Get your plan", d: "Solar kW, panels, subsidy, payback and the rain tank + recharge well appear instantly — with a 3-page PDF (map, solar, rainwater) and QR code." },
   ]
   return (
     <section id="how" className="scroll-mt-20 py-20 sm:py-28">
@@ -256,7 +256,7 @@ function Features() {
         <div className="mt-4 grid items-center gap-8 overflow-hidden rounded-3xl border bg-gradient-to-br from-sage-50 to-sage-100 p-6 sm:p-10 lg:grid-cols-[1fr_auto]">
           <div>
             <span className="inline-flex items-center gap-1.5 rounded-full bg-card px-2.5 py-1 text-xs font-semibold text-sage-700 shadow-sm"><FileText className="size-3.5" /> Green Roof Report</span>
-            <h3 className="font-heading mt-4 text-3xl font-medium tracking-tight">A one-page PDF your family can act on</h3>
+            <h3 className="font-heading mt-4 text-3xl font-medium tracking-tight">A clear PDF report any home, school or institution can act on</h3>
             <p className="mt-3 max-w-lg text-[15px] leading-relaxed text-muted-foreground">
               Satellite photo with the outline and panel layout, savings, subsidy, rainwater plan, a Green Score and a QR code to
               reopen it on any phone. Sign in to keep every roof you check in <b className="text-foreground">My roofs</b>.

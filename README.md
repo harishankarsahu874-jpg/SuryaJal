@@ -284,7 +284,7 @@ suryajal/
 │   ├── rain.py        harvest, tank, recharge well, ODA rule check, CHHATA, Green Score
 │   ├── climate.py     NASA POWER + cache + offline fallback
 │   ├── geo.py         Web-Mercator, polygon area, encoded polyline
-│   ├── report.py      one-page PDF (reportlab) + QR
+│   ├── report.py      3-page PDF (map · solar · rainwater, reportlab) + QR
 │   ├── stats.py       anonymous fest counter
 │   ├── auth.py        accounts: SQLite users, scrypt passwords, hashed bearer tokens, My roofs
 │   └── fonts/         DejaVu Sans (₹ symbol in PDF)

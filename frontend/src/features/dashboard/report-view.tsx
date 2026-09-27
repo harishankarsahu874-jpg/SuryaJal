@@ -67,7 +67,7 @@ export function ReportView() {
     } catch { /* cancelled */ }
   }
 
-  const water = w.coverage >= 1 ? "all of your family’s water" : `${Math.round(w.coverage * 100)}% of your family’s water`
+  const water = w.coverage >= 1 ? "all of the building’s water" : `${Math.round(w.coverage * 100)}% of the building’s water`
   return (
     <div className="space-y-3.5">
       <SectionCard>
@@ -173,7 +173,7 @@ export function ReportView() {
               <div>
                 <div className="font-semibold">Save your roofs</div>
                 <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">
-                  Sign in to keep this assessment, compare family homes and reopen them any time. Guests can still download the PDF.
+                  Sign in to keep this assessment, compare homes, schools and offices and reopen them any time. Guests can still download the PDF.
                 </p>
               </div>
             </div>
