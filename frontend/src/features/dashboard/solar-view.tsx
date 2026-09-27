@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react"
 import {
-  AlertTriangle, ArrowRight, Building2, Download, Grid2x2, Hourglass, Landmark, Leaf, MapPin, Minus,
+  AlertTriangle, ArrowRight, Building2, Download, Grid2x2, Hourglass, Landmark, Leaf, Loader2, MapPin, Minus,
   PenLine, Percent, Plus, Receipt, RotateCcw, Satellite, SolarPanel, Sun, TrendingUp, Zap,
 } from "lucide-react"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Slider } from "@/components/ui/slider"
 import { fmtIN, MONTHS_LONG, rupees, sqft } from "@/lib/format"
+import { useReportDownload } from "@/lib/report"
 import { cn } from "@/lib/utils"
 import { useDashboard } from "./state"
 import { CountUp, EmptyState, MonthBars, Pill, SavingsTimeline, SectionCard, StatTile } from "./ui-bits"
@@ -16,6 +17,7 @@ export function SolarView() {
   const [thumbQ, setThumbQ] = useState("")
   const [thumbLoaded, setThumbLoaded] = useState(false)
   const [bill, setBill] = useState("")
+  const { busy: dlBusy, download } = useReportDownload()
 
   // refresh the satellite layout picture only when a new result lands (not on every slider tick)
   useEffect(() => {
@@ -333,10 +335,11 @@ export function SolarView() {
           className="inline-flex h-13 w-full items-center justify-center gap-2 rounded-2xl bg-primary text-[15px] font-semibold text-primary-foreground shadow-sm transition hover:bg-primary/90 active:translate-y-px">
           Simulate Rainwater Potential <ArrowRight className="size-[18px]" />
         </button>
-        <a href={`/r?${query}&dl=1`}
-          className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-2xl border bg-muted/60 text-[15px] font-semibold text-foreground/85 transition hover:bg-muted">
-          <Download className="size-[18px]" /> Export Green Roof Report (PDF)
-        </a>
+        <button type="button" onClick={() => void download(query)} disabled={dlBusy}
+          className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-2xl border bg-muted/60 text-[15px] font-semibold text-foreground/85 transition hover:bg-muted disabled:opacity-60">
+          {dlBusy ? <Loader2 className="size-[18px] animate-spin" /> : <Download className="size-[18px]" />}
+          {dlBusy ? "Building your PDF…" : "Export Green Roof Report (PDF)"}
+        </button>
       </div>
     </div>
   )

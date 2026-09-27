@@ -9,6 +9,7 @@ import hashlib
 import io
 import json
 import math
+import socket
 import time
 from contextlib import asynccontextmanager
 from typing import List, Literal, Optional, Tuple
@@ -260,6 +261,29 @@ async def odisha_tariff(units: float = Query(DEFAULTS["monthly_units"], ge=0, le
 @app.get("/api/stats")
 async def get_stats():
     return stats.summary()
+
+
+@app.get("/api/net")
+async def net(request: Request):
+    """This machine's LAN IPv4 addresses + port, so the report QR and share links work
+    when SuryaJal runs on a PC and a phone on the same Wi-Fi/hotspot scans them
+    (the frontend only asks for this when the site itself is opened on localhost)."""
+    ips: List[str] = []
+    try:  # preferred: the address on the default route (no packet is actually sent)
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s_:
+            s_.connect(("10.255.255.255", 1))
+            ips.append(s_.getsockname()[0])
+    except OSError:
+        pass
+    try:  # fallback/companion: every IPv4 of the host, loopback dropped
+        for _fam, _typ, _proto, _canon, sa in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET):
+            ip = sa[0]
+            if ip not in ips and not ip.startswith("127."):
+                ips.append(ip)
+    except OSError:
+        pass
+    port = request.url.port or (443 if request.url.scheme == "https" else 80)
+    return {"ips": ips[:6], "port": port}
 
 
 # ------------------------------------------------------------------ geocoding (Nominatim proxy)

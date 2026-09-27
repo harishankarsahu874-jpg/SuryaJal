@@ -30,7 +30,7 @@ export default function DashboardPage() {
 }
 
 function Dashboard() {
-  const { tab, setTab, mapApi, assessing, roof } = useDashboard()
+  const { tab, setTab, mapApi, assessing, roof, config } = useDashboard()
   const panelTab: Tab = tab === "map" ? "solar" : tab
   const scroller = useRef<HTMLDivElement>(null)
   useEffect(() => { scroller.current?.scrollTo({ top: 0 }) }, [panelTab])
@@ -53,6 +53,13 @@ function Dashboard() {
             </motion.span>
           )}
         </AnimatePresence>
+        {/* AI engine status (desktop) — on phones it is shown on the map instead */}
+        {config && (
+          <span className="hidden items-center gap-1.5 rounded-full bg-secondary px-2.5 py-1 text-[11px] font-semibold text-secondary-foreground lg:inline-flex">
+            <span className={cn("size-2 rounded-full", config.engine === "mobilesam" ? "bg-emerald-500" : "bg-amber-500")} />
+            {config.engine === "mobilesam" ? "MobileSAM ready" : "OpenCV mode"}
+          </span>
+        )}
         <div className="ml-auto flex items-center gap-1.5">
           <button type="button" onClick={() => { setTab("map"); setTimeout(() => mapApi.current?.locate(), 80) }}
             className="grid size-10 place-items-center rounded-xl text-foreground/80 transition hover:bg-secondary" aria-label="Go to my location" title="My location">
@@ -63,13 +70,15 @@ function Dashboard() {
       </header>
 
       <div className="flex min-h-0 flex-1">
-        {/* map: always visible on desktop, a tab on phones */}
-        <section className={cn("relative min-h-0 flex-1", tab !== "map" && "max-lg:hidden")}>
+        {/* map: a full-screen tab on phones; on desktop it is capped at ~2/5 of the
+            screen so the report/numbers keep the room (it used to eat 55-70%) */}
+        <section className={cn("relative min-h-0 flex-1 lg:w-[40%] lg:min-w-[360px] lg:max-w-[560px] lg:flex-none",
+          tab !== "map" && "max-lg:hidden")}>
           <MapPanel visible={tab === "map" || (typeof window !== "undefined" && window.innerWidth >= 1024)} />
         </section>
 
-        {/* results panel */}
-        <aside className={cn("flex min-h-0 w-full flex-col lg:w-[480px] lg:shrink-0 lg:border-l xl:w-[520px]", tab === "map" && "max-lg:hidden")}>
+        {/* results panel: takes the rest of the screen */}
+        <aside className={cn("flex min-h-0 w-full flex-col lg:min-w-0 lg:flex-1 lg:border-l", tab === "map" && "max-lg:hidden")}>
           <nav className="hidden shrink-0 gap-1 border-b bg-card/60 p-2 lg:flex" aria-label="Results">
             {TABS.slice(1).map((t) => (
               <button key={t.id} type="button" onClick={() => setTab(t.id)}
@@ -87,7 +96,7 @@ function Dashboard() {
             ))}
           </nav>
           <div ref={scroller} className="min-h-0 flex-1 overflow-y-auto">
-            <div className="mx-auto w-full max-w-xl px-3.5 pt-3.5 pb-28 sm:px-5 lg:pb-8">
+            <div className="mx-auto w-full max-w-xl px-3.5 pt-3.5 pb-28 sm:px-5 lg:pb-8 xl:max-w-2xl 2xl:max-w-3xl">
               <AnimatePresence mode="wait" initial={false}>
                 <motion.div key={panelTab}
                   initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }}

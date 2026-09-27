@@ -7,6 +7,8 @@ import {
 import { Switch } from "@/components/ui/switch"
 import { api, ApiError, type SavedRoof } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
+import { usePhoneBase } from "@/lib/net"
+import { openReport, useReportDownload } from "@/lib/report"
 import { fmtIN, rupees } from "@/lib/format"
 import { cn } from "@/lib/utils"
 import { useDashboard, type Inputs } from "./state"
@@ -18,16 +20,24 @@ export function ReportView() {
   const { user, refresh } = useAuth()
   const [saving, setSaving] = useState(false)
   const [savedFor, setSavedFor] = useState("")
+  const { busy: dlBusy, download } = useReportDownload()
+  const [qrFailedFor, setQrFailedFor] = useState<string | null>(null)
+  const [qrNonce, setQrNonce] = useState(0)
+  const phoneBase = usePhoneBase()
 
   if (!roof) return <EmptyState onDemo={loadDemo} onMap={() => setTab("map")} />
   if (!r) return <ViewSkeleton />
 
   const s = r.solar, w = r.rain, g = r.score
-  const origin = window.location.origin
+  // Links that leave this device (QR, copy, share) point at a phone-reachable host:
+  // when SuryaJal runs on localhost that is the PC's Wi-Fi/LAN IP, elsewhere the origin.
+  const origin = phoneBase || window.location.origin
   const reportAbs = `${origin}/r?${query}`
   const shareUrl = `${origin}/app?${query}`
   const next = encodeURIComponent(`/app?${query}`)
   const saved = savedFor === query
+  const qrFailed = qrFailedFor === reportAbs
+  const qrHost = (() => { try { return new URL(reportAbs).host } catch { return "" } })()
 
   const save = async () => {
     setSaving(true)
@@ -86,19 +96,40 @@ export function ReportView() {
           <Mini k="Rain / yr" v={`${fmtIN(w.annual_harvest_l / 1000)} kL`} />
         </div>
         <div className="mt-3.5 grid grid-cols-2 gap-2">
-          <a href={`/r?${query}&dl=1`} className="inline-flex h-12 items-center justify-center gap-2 rounded-xl bg-primary font-semibold text-primary-foreground shadow-sm hover:bg-primary/90">
-            <Download className="size-[18px]" /> Download
-          </a>
-          <a href={`/r?${query}`} target="_blank" rel="noopener" className="inline-flex h-12 items-center justify-center gap-2 rounded-xl border bg-card font-semibold hover:bg-secondary">
+          <button type="button" onClick={() => void download(query)} disabled={dlBusy}
+            className="inline-flex h-12 items-center justify-center gap-2 rounded-xl bg-primary font-semibold text-primary-foreground shadow-sm transition hover:bg-primary/90 disabled:opacity-60">
+            {dlBusy ? <Loader2 className="size-[18px] animate-spin" /> : <Download className="size-[18px]" />} Download
+          </button>
+          <a href={`/r?${query}`} target="_blank" rel="noopener"
+            onClick={(e) => { if (!(e.metaKey || e.ctrlKey || e.shiftKey)) { e.preventDefault(); openReport(`/r?${query}`) } }}
+            className="inline-flex h-12 items-center justify-center gap-2 rounded-xl border bg-card font-semibold transition hover:bg-secondary">
             <ExternalLink className="size-[18px]" /> Open
           </a>
         </div>
+        <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground">
+          Download saves the PDF straight to your device — if your browser or viewer blocks it, use Open and save from there.
+        </p>
       </SectionCard>
 
-      <SectionCard title="Take it home" subtitle="Scan on your phone (same Wi-Fi / hotspot, or a public link)" right={<QrCode className="size-5 text-sage-600" />}>
+      <SectionCard title="Take it home"
+        subtitle={phoneBase
+          ? "Scan with any phone on the same Wi-Fi / hotspot — the QR points at this PC's Wi-Fi address"
+          : "Scan on your phone (same Wi-Fi / hotspot, or a public link)"}
+        right={<QrCode className="size-5 text-sage-600" />}>
         <div className="flex items-center gap-4">
-          <img src={`/api/qr.svg?data=${encodeURIComponent(reportAbs)}`} alt="QR code for this report" width={124} height={124}
-            className="size-[124px] shrink-0 rounded-xl border bg-white p-1.5" />
+          <div className="w-[124px] shrink-0">
+            {qrFailed ? (
+              <button type="button" onClick={() => { setQrNonce((n) => n + 1); setQrFailedFor(null) }}
+                className="grid size-[124px] place-items-center rounded-xl border border-dashed bg-white p-2 text-center text-[11px] leading-snug text-muted-foreground hover:bg-secondary">
+                QR didn’t load.<br />Tap to retry
+              </button>
+            ) : (
+              <img key={`${reportAbs}#${qrNonce}`} src={`/api/qr.svg?data=${encodeURIComponent(reportAbs)}&r=${qrNonce}`}
+                alt="QR code for this report" width={124} height={124} onError={() => setQrFailedFor(reportAbs)}
+                className="size-[124px] rounded-xl border bg-white p-1.5" />
+            )}
+            {qrHost && <div className="mt-1 truncate text-center text-[10px] text-muted-foreground" title={reportAbs}>{qrHost}</div>}
+          </div>
           <div className="min-w-0 flex-1 space-y-2">
             <input readOnly value={shareUrl} aria-label="Share link" onFocus={(e) => e.target.select()}
               className="h-10 w-full rounded-lg border bg-muted/50 px-2.5 text-xs text-muted-foreground outline-none" />

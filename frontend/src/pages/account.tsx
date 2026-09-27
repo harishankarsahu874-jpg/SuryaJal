@@ -16,6 +16,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { api, type SavedRoof } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
 import { fmtIN, initials, litres, rupees, timeAgo } from "@/lib/format"
+import { useReportDownload } from "@/lib/report"
 import { cn } from "@/lib/utils"
 
 export default function AccountPage() {
@@ -148,6 +149,7 @@ function Total({ icon: Icon, label, value }: { icon: typeof Star; label: string;
 
 function RoofCard({ roof, onDelete }: { roof: SavedRoof; onDelete: () => void }) {
   const s = roof.summary
+  const { busy: pdfBusy, download } = useReportDownload()
   const gradeTone = s.score >= 75 ? "bg-emerald-600" : s.score >= 50 ? "bg-amber-500" : "bg-red-600"
   return (
     <motion.article layout initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.96 }}
@@ -175,7 +177,10 @@ function RoofCard({ roof, onDelete }: { roof: SavedRoof; onDelete: () => void })
         <p className="mt-3 text-xs text-muted-foreground">{rupees(s.annual_savings)} saved a year · {s.panels} panels · {fmtIN(s.tank_l)} L tank</p>
         <div className="mt-4 flex gap-2 pt-1">
           <Button asChild className="h-10 flex-1 rounded-xl font-semibold"><Link to={`/app?${roof.query}`}><ExternalLink /> Open</Link></Button>
-          <Button asChild variant="outline" className="h-10 rounded-xl bg-card font-semibold"><a href={`/r?${roof.query}&dl=1`} aria-label="Download PDF"><Download /> PDF</a></Button>
+          <Button variant="outline" className="h-10 rounded-xl bg-card font-semibold" disabled={pdfBusy}
+            onClick={() => void download(roof.query)} aria-label="Download PDF">
+            {pdfBusy ? <Loader2 className="animate-spin" /> : <Download />} PDF
+          </Button>
           <AlertDialog>
             <AlertDialogTrigger asChild>
               <Button variant="ghost" className="h-10 rounded-xl text-muted-foreground hover:text-red-700" aria-label="Delete roof"><Trash2 /></Button>
