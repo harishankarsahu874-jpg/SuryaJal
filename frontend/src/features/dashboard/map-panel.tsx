@@ -8,6 +8,7 @@ import {
 } from "lucide-react"
 import { api, type LocationInfo, type SegmentResponse } from "@/lib/api"
 import { areaM2, ODISHA_CENTER, ODISHA_CITIES, ODISHA_ZOOM, type LatLng } from "@/lib/geo"
+import { EsriImagery, type ImageryFallbackEvent } from "@/lib/imagery"
 import { fmtIN, litres, sqft } from "@/lib/format"
 import { cn } from "@/lib/utils"
 import { useDashboard } from "./state"
@@ -62,10 +63,18 @@ export function MapPanel({ visible }: { visible: boolean }) {
     const map = L.map(elRef.current, { zoomControl: false, maxZoom: 21, minZoom: 3, worldCopyJump: true })
       .setView(ODISHA_CENTER, ODISHA_ZOOM)          // Bhubaneswar, Odisha
     mapRef.current = map
-    L.tileLayer(`${ESRI}/World_Imagery/MapServer/tile/{z}/{y}/{x}`, {
+    // Esri has no z19 close-ups in many Odisha towns (it answers with a grey "Map data not yet
+    // available" tile). EsriImagery detects that and shows the nearest zoom that has a photo.
+    const imagery = new EsriImagery(`${ESRI}/World_Imagery/MapServer/tile/{z}/{y}/{x}`, {
       maxNativeZoom: 19, maxZoom: 21,
       attribution: "Imagery © Esri, Maxar, Earthstar Geographics | Search © OpenStreetMap",
     }).addTo(map)
+    imagery.once("imagery:fallback", (e) => {
+      const lv = (e as ImageryFallbackEvent).levelsUp
+      toast.info(`No street-level satellite photo exists for this spot yet — showing the nearest zoom ` +
+        `(${lv} level${lv > 1 ? "s" : ""} out, a little blurry). You can still tap your roof: the AI adapts.`,
+        { duration: 9000 })
+    })
     const labels = L.layerGroup([
       L.tileLayer(`${ESRI}/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}`, { maxNativeZoom: 19, maxZoom: 21, opacity: 0.9 }),
       L.tileLayer(`${ESRI}/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}`, { maxNativeZoom: 19, maxZoom: 21, opacity: 0.5 }),

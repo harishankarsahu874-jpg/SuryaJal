@@ -10,6 +10,7 @@ CHHATA rooftop-rainwater scheme.
 Every default below is editable from the UI ("Assumptions" panel) and each one carries
 the source it came from, so judges can see exactly where the numbers come from.
 """
+import os
 from pathlib import Path
 
 APP_NAME = "SuryaJal"
@@ -30,8 +31,15 @@ APP_DIR = BASE_DIR / "app"
 STATIC_DIR = BASE_DIR / "static"
 SITE_DIR = STATIC_DIR / "site"            # built React site (frontend/ -> npm run build)
 MODELS_DIR = BASE_DIR / "models"
-DATA_DIR = BASE_DIR / "data"
-CACHE_DIR = BASE_DIR / ".cache"          # tiles + climate cache (safe to delete)
+DATA_DIR = BASE_DIR / "data"             # bundled, read-only data (climate_fallback.json)
+# Files the app *writes*: the accounts database and the fest counter (RUNTIME_DIR) and the
+# tile + climate cache (CACHE_DIR, safe to delete). Locally they live next to the code. On a
+# cloud host (Render, Railway, Fly, HF Spaces...) the container disk is wiped on every deploy
+# or restart, so mount a persistent disk and point them at it, e.g.
+#     SURYAJAL_DATA_DIR=/var/data      SURYAJAL_CACHE_DIR=/var/data/cache
+# (keep the disk *outside* /app/data, or it would hide the bundled climate_fallback.json).
+RUNTIME_DIR = Path(os.environ.get("SURYAJAL_DATA_DIR") or DATA_DIR)
+CACHE_DIR = Path(os.environ.get("SURYAJAL_CACHE_DIR") or BASE_DIR / ".cache")
 FONTS_DIR = APP_DIR / "fonts"
 
 USER_AGENT = "SuryaJal-odisha/2.0 (student renewable-energy project; contact via GitHub)"

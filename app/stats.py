@@ -6,9 +6,9 @@ import datetime as dt
 import json
 import threading
 
-from .config import DATA_DIR
+from .config import RUNTIME_DIR
 
-_FILE = DATA_DIR / "stats.json"
+_FILE = RUNTIME_DIR / "stats.json"
 _lock = threading.Lock()
 
 

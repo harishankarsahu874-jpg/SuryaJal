@@ -47,3 +47,13 @@ def test_embedding_cache_speeds_up_refinement(seg):
     a = seg.segment(img, [(250, 250)], [1], cache_key=("t", 1))
     b = seg.segment(img, [(250, 250), (95, 90)], [1, 1], cache_key=("t", 1))
     assert not a["cached_embedding"] and b["cached_embedding"]
+
+
+def test_available_cpus_env_override(monkeypatch):
+    from app.segment import available_cpus
+    monkeypatch.setenv("SURYAJAL_THREADS", "1")
+    assert available_cpus() == 1
+    monkeypatch.setenv("SURYAJAL_THREADS", "garbage")
+    assert available_cpus() >= 1
+    monkeypatch.delenv("SURYAJAL_THREADS")
+    assert available_cpus() >= 1

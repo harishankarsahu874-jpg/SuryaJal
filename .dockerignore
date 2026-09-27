@@ -1,9 +1,13 @@
+.git
 .venv
 __pycache__
 .cache
 .pytest_cache
 models/*.onnx
+models/*.part
 data/stats.json
 data/suryajal.db*
 docs
-frontend/node_modules
+tests
+# the React source is not needed at run time - the built site is committed in static/site
+frontend
