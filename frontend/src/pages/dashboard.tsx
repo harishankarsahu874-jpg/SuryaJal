@@ -69,44 +69,43 @@ function Dashboard() {
         </div>
       </header>
 
+      {/* desktop: one page at a time - 1) roof map, 2) solar, 3) rainwater, 4) report */}
+      <nav className="relative z-[1050] hidden shrink-0 gap-1 border-b bg-card/60 p-2 lg:flex" aria-label="Sections">
+        {TABS.map((t, i) => (
+          <button key={t.id} type="button" onClick={() => setTab(t.id)} aria-current={tab === t.id ? "page" : undefined}
+            className={cn(
+              "relative inline-flex h-10 flex-1 items-center justify-center gap-2 rounded-xl text-sm font-semibold transition",
+              tab === t.id ? "text-primary-foreground" : "text-muted-foreground hover:bg-secondary hover:text-foreground",
+            )}>
+            {tab === t.id && (
+              <motion.span layoutId="desk-tab" className="absolute inset-0 rounded-xl bg-primary shadow-sm"
+                transition={{ type: "spring", stiffness: 420, damping: 34 }} />
+            )}
+            <span className="relative text-xs opacity-70">{i + 1}</span>
+            <t.icon className="relative size-4" />
+            <span className="relative">{t.label}</span>
+          </button>
+        ))}
+      </nav>
+
       <div className="flex min-h-0 flex-1">
-        {/* map: a full-screen tab on phones; on desktop it is capped at ~2/5 of the
-            screen so the report/numbers keep the room (it used to eat 55-70%) */}
-        <section className={cn("relative min-h-0 flex-1 lg:w-[40%] lg:min-w-[360px] lg:max-w-[560px] lg:flex-none",
-          tab !== "map" && "max-lg:hidden")}>
-          <MapPanel visible={tab === "map" || (typeof window !== "undefined" && window.innerWidth >= 1024)} />
+        {/* page 1: the map, full screen */}
+        <section className={cn("relative min-h-0 flex-1", tab !== "map" && "hidden")}>
+          <MapPanel visible={tab === "map"} />
         </section>
 
-        {/* results panel: takes the rest of the screen */}
-        <aside className={cn("flex min-h-0 w-full flex-col lg:min-w-0 lg:flex-1 lg:border-l", tab === "map" && "max-lg:hidden")}>
-          <nav className="hidden shrink-0 gap-1 border-b bg-card/60 p-2 lg:flex" aria-label="Results">
-            {TABS.slice(1).map((t) => (
-              <button key={t.id} type="button" onClick={() => setTab(t.id)}
-                className={cn(
-                  "relative inline-flex h-10 flex-1 items-center justify-center gap-2 rounded-xl text-sm font-semibold transition",
-                  panelTab === t.id ? "text-primary-foreground" : "text-muted-foreground hover:bg-secondary hover:text-foreground",
-                )}>
-                {panelTab === t.id && (
-                  <motion.span layoutId="desk-tab" className="absolute inset-0 rounded-xl bg-primary shadow-sm"
-                    transition={{ type: "spring", stiffness: 420, damping: 34 }} />
-                )}
-                <t.icon className="relative size-4" />
-                <span className="relative">{t.label}</span>
-              </button>
-            ))}
-          </nav>
-          <div ref={scroller} className="min-h-0 flex-1 overflow-y-auto">
-            <div className="mx-auto w-full max-w-xl px-3.5 pt-3.5 pb-28 sm:px-5 lg:pb-8 xl:max-w-2xl 2xl:max-w-3xl">
-              <AnimatePresence mode="wait" initial={false}>
-                <motion.div key={panelTab}
-                  initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }}
-                  transition={{ duration: 0.22, ease: "easeOut" }}>
-                  {panelTab === "solar" ? <SolarView /> : panelTab === "rain" ? <RainView /> : <ReportView />}
-                </motion.div>
-              </AnimatePresence>
-            </div>
+        {/* pages 2-4: solar / rainwater / report, full width */}
+        <div ref={scroller} className={cn("min-h-0 flex-1 overflow-y-auto", tab === "map" && "hidden")}>
+          <div className="mx-auto w-full max-w-xl px-3.5 pt-3.5 pb-28 sm:px-5 lg:max-w-3xl lg:pb-10">
+            <AnimatePresence mode="wait" initial={false}>
+              <motion.div key={panelTab}
+                initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }}
+                transition={{ duration: 0.22, ease: "easeOut" }}>
+                {panelTab === "solar" ? <SolarView /> : panelTab === "rain" ? <RainView /> : <ReportView />}
+              </motion.div>
+            </AnimatePresence>
           </div>
-        </aside>
+        </div>
       </div>
 
       {/* bottom navigation (phones / tablets) */}

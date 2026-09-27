@@ -350,7 +350,8 @@ async def geocode(q: str = Query(..., min_length=2, max_length=200)):
     if pin and not out:                    # offline / not in OSM: built-in Odisha PIN table
         hit = pincode.lookup(pin)
         if hit:
-            out = [_geo_row(hit["name"], hit["lat"], hit["lon"], "postcode")]
+            out = [_geo_row(hit["name"], hit["lat"], hit["lon"],
+                             "postcode" if hit["exact"] else "postcode_area")]
     if not out and data:                   # nothing in Odisha matched - show what we found
         out = [{"name": d.get("display_name", ""), "lat": float(d["lat"]),
                 "lon": float(d["lon"]), "type": d.get("type", ""),

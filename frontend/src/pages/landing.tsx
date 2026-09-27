@@ -312,10 +312,8 @@ function ModuleCard({ tone, icon: Icon, title, lead, points, bars }: {
 // ------------------------------------------------------------------ specs (live from /api/health)
 function Specs() {
   const [h, setH] = useState<Health | null>(null)
-  const [today, setToday] = useState<{ roofs: number; kw: number; litres: number } | null>(null)
   useEffect(() => {
     api<Health>("/api/health").then(setH).catch(() => {})
-    api<{ today: { roofs: number; kw: number; litres: number } }>("/api/stats").then((s) => setToday(s.today)).catch(() => {})
   }, [])
   const sp = h?.specs
   const specs = [
@@ -333,12 +331,6 @@ function Specs() {
     <section id="specs" className="scroll-mt-20 py-20 sm:py-28">
       <div className="mx-auto max-w-6xl px-4 sm:px-6">
         <SectionHead kicker="Under the hood" title="Real data, open maths, every source cited" />
-        {today && today.roofs > 0 && (
-          <div className="mx-auto mt-6 flex w-fit items-center gap-2 rounded-full bg-sage-900 px-4 py-2 text-sm text-white">
-            <span className="size-2 animate-pulse rounded-full bg-emerald-400" />
-            Today at the fest: <b>{today.roofs}</b> roofs · <b>{today.kw.toFixed(1)} kW</b> solar · <b>{fmtIN(today.litres)} L</b> rain
-          </div>
-        )}
         <div className="mt-12 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {specs.map((s, i) => (
             <motion.div key={s.k} initial={{ opacity: 0, y: 16 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }}
