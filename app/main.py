@@ -310,7 +310,14 @@ async def _nominatim(path: str, params: dict):
             _geo_last[0] = time.monotonic()
     if r.status_code != 200:
         raise HTTPException(502, "Place search is unavailable right now.")
-    data = r.json()
+    try:
+        data = r.json()
+    except (ValueError, json.JSONDecodeError) as exc:
+        # A proxy/rate-limit page can be returned with a successful HTTP status. Do not
+        # let a non-JSON upstream response turn a normal search into an unhandled 500.
+        raise HTTPException(502, "Place search returned an invalid response.") from exc
+    if not isinstance(data, (list, dict)):
+        raise HTTPException(502, "Place search returned an invalid response.")
     if len(_geo_cache) > 500:
         _geo_cache.clear()
     _geo_cache[key] = data
@@ -338,24 +345,50 @@ async def geocode(q: str = Query(..., min_length=2, max_length=200)):
             data = await _nominatim("/search", {"q": q, "limit": 6, "addressdetails": 0,
                                                 "countrycodes": "in",
                                                 "viewbox": NOMINATIM_VIEWBOX, "bounded": 0})
-    except (httpx.HTTPError, HTTPException):
+        if not isinstance(data, list):
+            raise HTTPException(502, "Place search returned an invalid response.")
+    except (httpx.HTTPError, HTTPException, ValueError, TypeError):
         online = False
+        data = []
     out = []
     for d in data:
-        name = d.get("display_name", "")
-        lat, lon = float(d["lat"]), float(d["lon"])
+        # Ignore malformed upstream entries rather than failing the entire search.
+        if not isinstance(d, dict):
+            continue
+        try:
+            name = d.get("display_name", "")
+            lat, lon = float(d["lat"]), float(d["lon"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if not isinstance(name, str) or not name or not (math.isfinite(lat) and math.isfinite(lon)):
+            continue
+        if not (-85 <= lat <= 85 and -180 <= lon <= 180):
+            continue
         if ", India" in name and not any(t in name for t in (", Odisha", "Odisha,")):
             continue                       # outside the State: skip it
-        out.append(_geo_row(name, lat, lon, d.get("type", "")))
+        out.append(_geo_row(name, lat, lon, str(d.get("type", ""))))
     if pin and not out:                    # offline / not in OSM: built-in Odisha PIN table
         hit = pincode.lookup(pin)
         if hit:
             out = [_geo_row(hit["name"], hit["lat"], hit["lon"],
                              "postcode" if hit["exact"] else "postcode_area")]
     if not out and data:                   # nothing in Odisha matched - show what we found
-        out = [{"name": d.get("display_name", ""), "lat": float(d["lat"]),
-                "lon": float(d["lon"]), "type": d.get("type", ""),
-                "district": None, "discom": None} for d in data[:3]]
+        for d in data:
+            if not isinstance(d, dict):
+                continue
+            try:
+                lat, lon = float(d["lat"]), float(d["lon"])
+            except (KeyError, TypeError, ValueError):
+                continue
+            name = d.get("display_name", "")
+            if (not isinstance(name, str) or not name
+                    or not (math.isfinite(lat) and math.isfinite(lon))
+                    or not (-85 <= lat <= 85 and -180 <= lon <= 180)):
+                continue
+            out.append({"name": name, "lat": lat, "lon": lon, "type": str(d.get("type", "")),
+                        "district": None, "discom": None})
+            if len(out) == 3:
+                break
     if not out and not online:
         raise HTTPException(503, "Place search needs internet - you can still pan the map or enter an Odisha PIN code.")
     return out
