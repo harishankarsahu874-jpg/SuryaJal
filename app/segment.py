@@ -10,6 +10,7 @@ converted to a simplified polygon.
 """
 from __future__ import annotations
 
+import math
 import os
 import threading
 import time
@@ -22,6 +23,34 @@ import numpy as np
 
 ENCODER_FILE = "mobile_sam_image_encoder.onnx"
 DECODER_FILE = "sam_mask_decoder_multi.onnx"
+
+
+def available_cpus() -> int:
+    """How many CPU threads ONNX Runtime should use.
+
+    Order: SURYAJAL_THREADS env var  >  container CPU quota (cgroup v2 / v1)  >  affinity
+    mask  >  os.cpu_count().  Cloud hosts such as Render, Railway or Fly give a container
+    e.g. 0.5 CPU while os.cpu_count() still reports the host's 16+ cores; spinning up that
+    many threads on a throttled container makes MobileSAM several times *slower*.
+    """
+    env = (os.environ.get("SURYAJAL_THREADS") or "").strip()
+    if env.isdigit() and int(env) > 0:
+        return int(env)
+    try:
+        n = len(os.sched_getaffinity(0))
+    except (AttributeError, OSError):
+        n = os.cpu_count() or 2
+    try:                                          # cgroup v2: "max 100000" | "50000 100000"
+        quota, period = Path("/sys/fs/cgroup/cpu.max").read_text().split()[:2]
+    except (OSError, ValueError):
+        try:                                      # cgroup v1
+            quota = Path("/sys/fs/cgroup/cpu/cpu.cfs_quota_us").read_text().strip()
+            period = Path("/sys/fs/cgroup/cpu/cpu.cfs_period_us").read_text().strip()
+        except OSError:
+            quota = period = "max"
+    if quota != "max" and quota.lstrip("-").isdigit() and int(quota) > 0 and period.isdigit():
+        n = min(n, math.ceil(int(quota) / int(period)))
+    return max(1, n)
 
 
 class RoofSegmenter:
@@ -44,7 +73,7 @@ class RoofSegmenter:
         try:
             import onnxruntime as ort
             so = ort.SessionOptions()
-            so.intra_op_num_threads = max(1, (os.cpu_count() or 2))
+            so.intra_op_num_threads = available_cpus()
             so.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
             so.enable_cpu_mem_arena = False     # ~250 MB less RAM, same speed (fits 4 GB laptops)
             so.enable_mem_pattern = False

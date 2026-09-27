@@ -25,9 +25,9 @@ from typing import Dict, Iterator, List, Optional
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from pydantic import BaseModel, Field
 
-from .config import DATA_DIR
+from .config import RUNTIME_DIR
 
-DB_PATH: Path = DATA_DIR / "suryajal.db"     # tests point this at a temp file
+DB_PATH: Path = RUNTIME_DIR / "suryajal.db"  # tests point this at a temp file
 SESSION_DAYS = 30                           # "keep me signed in"
 SHORT_SESSION_HOURS = 12                    # shared fest laptop: box unticked
 MAX_ROOFS_PER_USER = 200

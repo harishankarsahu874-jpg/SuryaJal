@@ -1,11 +1,14 @@
 """Download the MobileSAM ONNX models (~45 MB) used for AI roof detection.
 
-    python scripts/download_models.py
+    python scripts/download_models.py             # laptop: never fails, app falls back to OpenCV
+    python scripts/download_models.py --strict    # Docker build: fail the build instead of
+                                                  # shipping an image without the AI models
 
 Source: https://huggingface.co/Acly/MobileSAM (ONNX export of MobileSAM, MIT licence).
 Without these files SuryaJal still works, using a basic OpenCV fallback.
 """
 import sys
+import time
 import urllib.request
 from pathlib import Path
 
@@ -41,12 +44,27 @@ def fetch(name: str, size: int) -> None:
     tmp.replace(target)
 
 
+def fetch_with_retries(name: str, size: int, tries: int = 3) -> None:
+    for attempt in range(1, tries + 1):
+        try:
+            fetch(name, size)
+            return
+        except Exception as e:
+            if attempt == tries:
+                raise
+            print(f"   retry {attempt}/{tries - 1} after error: {e}")
+            time.sleep(3 * attempt)
+
+
 def main():
+    strict = "--strict" in sys.argv[1:]
     MODELS.mkdir(exist_ok=True)
     try:
         for n, s in FILES.items():
-            fetch(n, s)
-    except Exception as e:  # network trouble should not block the app
+            fetch_with_retries(n, s)
+    except Exception as e:  # network trouble should not block the app...
+        if strict:          # ...except in a cloud build, where a silent fallback hides a broken deploy
+            raise SystemExit(f"✗ Could not download the MobileSAM models ({e}). Retry the build.")
         print(f"Could not download models ({e}). SuryaJal will use the OpenCV fallback.")
         sys.exit(0)
     print("MobileSAM ready ✓")

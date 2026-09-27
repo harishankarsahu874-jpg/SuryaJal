@@ -115,7 +115,7 @@ def test_delete_account(client):
 
 def test_health_specs_and_pages(client):
     h = client.get("/api/health").json()
-    assert "ready" in h and h["specs"]["solar"]["max_subsidy"] == 78000
+    assert "ready" in h and h["specs"]["solar"]["max_subsidy"] == 78000 + 60000   # central + Odisha SFA
     assert h["specs"]["climate"]["offline_cities"] >= 10
     # old share links redirect to the dashboard; unknown API paths stay 404
     r = client.get("/?p=abc&u=1", follow_redirects=False)
@@ -127,7 +127,8 @@ def test_health_specs_and_pages(client):
 def test_panel_override_and_irr(client):
     base = client.post("/api/assess", json={"polygon": [list(p) for p in ROOF], "monthly_units": 250}).json()
     s = base["solar"]
-    assert s["user_chosen"] is False and s["irr"] is not None and 0 < s["irr"] < 1
+    # with the central + Odisha subsidies a small system costs very little, so IRR can exceed 100 %
+    assert s["user_chosen"] is False and s["irr"] is not None and s["irr"] > 0
     more = client.post("/api/assess", json={"polygon": [list(p) for p in ROOF], "monthly_units": 250,
                                              "panels": s["panels"] + 2}).json()["solar"]
     assert more["user_chosen"] is True and more["panels"] == min(s["panels"] + 2, s["roof_max_panels"])

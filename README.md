@@ -365,6 +365,48 @@ SHA‑256 hashes, failed logins are throttled, and redirects after sign‑in onl
    ```
 4. Wait for the build. You get a public HTTPS link, and the QR codes work from any phone.
 
+## ☁️ Deploy on Render (Docker)
+
+The same `Dockerfile` works on [Render](https://render.com) - no code changes and **no secrets / API keys** are
+needed (NASA POWER, Esri imagery and Nominatim are all key‑less).
+
+1. **New → Web Service**, connect the `SuryaJal` GitHub repo and fill the form:
+
+   | Field | Value |
+   | --- | --- |
+   | Language | **Docker** (Render finds the `Dockerfile` at the repo root) |
+   | Branch | `main` |
+   | Region | **Singapore** is the closest to Odisha; Oregon works too, just ~200 ms further away |
+   | Root Directory | leave empty |
+   | Instance type | **Starter** (512 MB) or better - see the memory note below |
+   | Advanced → Health Check Path | `/api/health` |
+   | Environment variables | none required (`PORT` is injected by Render; the container reads it) |
+
+2. Click **Deploy web service**. The first build takes ~5 min: it installs the Python wheels and downloads the
+   MobileSAM models (~45 MB) *into the image*, so cold starts never re‑download them.
+3. Open `https://<your-service>.onrender.com/api/health` - you should see `"engine": "mobilesam"` and, a few
+   seconds later, `"ready": true`. Share links and the QR code use the public HTTPS URL automatically
+   (`--proxy-headers` in the Dockerfile).
+
+**Keep accounts across deploys (optional).** The container disk is wiped on every deploy/restart, so
+`data/suryajal.db` (accounts, saved roofs) and `data/stats.json` (fest counter) are lost unless you add a
+persistent disk (Starter plan or higher, from 1 GB):
+
+| Setting | Value |
+| --- | --- |
+| Disk → Mount path | `/var/data` (**not** `/app/data`, which would hide the bundled `climate_fallback.json`) |
+| Env var `SURYAJAL_DATA_DIR` | `/var/data` |
+| Env var `SURYAJAL_CACHE_DIR` | `/var/data/cache` (optional - keeps the satellite‑tile / climate cache warm too) |
+
+**Memory & CPU.** MobileSAM runs on the CPU. The app idles at ~100 MB and the ONNX encoder needs a few hundred
+MB more on the first tap, so the 512 MB Starter instance is workable but tight - watch the *Metrics* tab after
+the first few AI detections; if the service restarts with an out‑of‑memory event, move to the 2 GB instance.
+ONNX Runtime automatically limits its threads to the container's CPU quota (override with `SURYAJAL_THREADS`).
+The **Free** instance also works for demos, but it sleeps after 15 min of inactivity (the next visitor waits
+~1 min for the cold start) and cannot have a persistent disk.
+
+Every push to `main` redeploys automatically (Settings → *Auto‑Deploy*).
+
 ---
 
 ## 🔭 Future upgrades
