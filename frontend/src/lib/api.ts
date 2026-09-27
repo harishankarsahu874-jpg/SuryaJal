@@ -97,26 +97,76 @@ export interface Defaults {
   m2_per_kw: number
   panel_w: number
   cost_per_kw: number
-  subsidy: boolean
-  tariff: number
-  export_rate: number | null
+  subsidy: boolean              // PM Surya Ghar central financial assistance
+  state_subsidy: boolean        // Odisha State Financial Assistance (SFA)
+  /** null = bill with the OERC domestic slabs instead of a flat rate */
+  tariff: number | null
+  sanctioned_load_kw: number    // for the ₹20/kW/month fixed charge
+  export_rate: number | null    // null = OERC settlement at the GRIDCO APPC feed-in tariff
+  net_meter_cap: number         // 0.9 - generation credited up to 90 % of consumption
   co2_kg_per_kwh: number
   monthly_units: number
   family_size: number
+  floors: number                // CHHATA allows at most 3
   roof_type: string
   lpcd: number
   design_rain_mm: number
-  bwssb_l_per_m2: number
+  rwh_l_per_m2: number          // ODA Rules 2020: 60 L per m² of roof
+  chhata: boolean               // show the Odisha CHHATA rainwater subsidy
+  rrhs_cost_per_m2: number
   tanker_litres: number
   tanker_price: number
   kg_co2_per_tree_year: number
   life_years: number
 }
 
+export interface Discom {
+  name: string
+  areas: string
+  site: string
+}
+
+export interface OdishaTown {
+  name: string
+  district: string
+  discom: string
+  lat: number
+  lon: number
+  annual_rain_mm: number
+  ghi_avg: number
+  sunniest_month: number
+  monsoon_rain_mm: number
+}
+
+export interface OdishaInfo {
+  state: string
+  capital: string
+  map_center: [number, number]
+  map_zoom: number
+  discoms: Record<string, Discom>
+  tariff: HealthSpecs["solar"]
+  water: HealthSpecs["water"]
+  towns: OdishaTown[]
+}
+
+export interface LocationInfo {
+  state: string
+  district: string | null
+  discom: string | null
+  discom_name: string | null
+  nearest: string | null
+  km_away: number | null
+  areas: string | null
+  site: string | null
+  in_odisha: boolean
+  discoms?: Record<string, Discom>
+}
+
 export interface AppConfig {
   defaults: Defaults
   roof_types: Record<string, { label: string; c: number }>
   sources: [string, string, string][]
+  odisha?: OdishaInfo
   engine: string
   engine_note: string | null
   version: string
@@ -124,10 +174,47 @@ export interface AppConfig {
 
 export interface HealthSpecs {
   model: { name: string; runtime: string; size_mb: number; warm: boolean; crop_px: number }
+  state: { name: string; capital: string; map_center: [number, number]; map_zoom: number; discoms: number; districts: number }
   imagery: { source: string; max_zoom: number; m_per_px: number }
   climate: { source: string; period: string; offline_cities: number }
-  solar: { scheme: string; max_subsidy: number; tariff: number; export_rate: number; m2_per_kw: number; panel_w: number; co2_kg_per_kwh: number }
-  water: { rule: string; l_per_m2: number; lpcd: number; roof_types: number }
+  solar: {
+    scheme: string
+    max_subsidy: number
+    central_max: number
+    state_max: number
+    tariff: number | null
+    tariff_label: string
+    tariff_slabs: { from: number; to: number | null; label: string; rate: number }[]
+    fixed_charge_per_kw: number
+    duty_pct: number
+    tariff_fy: string
+    export_rate: number
+    net_meter_cap: number
+    max_nm_kw: number
+    m2_per_kw: number
+    panel_w: number
+    co2_kg_per_kwh: number
+  }
+  water: {
+    rule: string
+    rule_full: string
+    l_per_m2: number
+    mandate_plot_m2: number
+    recharge_plot_m2: number
+    downpipes_per_100_m2: number
+    downpipe_mm: number
+    chhata: {
+      max_subsidy: number
+      share_of_cost: number
+      roof_min_m2: number
+      roof_max_m2: number
+      max_floors: number
+      scheme_years: string
+      portal: string
+    }
+    lpcd: number
+    roof_types: number
+  }
 }
 
 export interface Health {
@@ -167,20 +254,42 @@ export interface Solar {
   daily_units_per_kw: number
   monthly_gen: number[]
   monthly_consumption: number[]
+  monthly_import: number[]
+  monthly_export: number[]
+  monthly_bill_before: number[]
+  monthly_bill_after: number[]
   monthly_savings: number[]
   annual_gen: number
   annual_units: number
+  annual_units_after: number
   self_used: number
   exported: number
+  /** units actually paid for under the OERC 90 %-of-consumption cap */
+  export_paid: number
+  /** export credits that lapse at the March settlement */
+  export_lapsed: number
+  export_income: number
+  net_meter_cap: number
+  credit_limit_units: number
   coverage: number
+  /** all-in ₹/unit you pay today (OERC slabs + fixed charge + duty) */
   tariff: number
+  /** ₹/unit your last (dearest) unit costs - what a solar unit displaces */
+  tariff_marginal: number
+  tariff_override: boolean
+  sanctioned_load_kw: number
   export_rate: number
+  export_rate_auto: boolean
   gross_cost: number
   subsidy: number
+  subsidy_central: number
+  subsidy_state: number
   net_cost: number
   annual_savings: number
   monthly_savings_avg: number
   bill_before: number
+  bill_after: number
+  net_metering: { ok: boolean; limit_kw: number; kw: number; need_kw: number; state_cap_kw: number }
   payback_years: number | null
   lifetime_years: number
   lifetime_savings: number
@@ -207,9 +316,41 @@ export interface Rain {
   coverage: number
   days_of_water: number
   storage_need_l: number
+  monsoon_harvest_l: number
+  monsoon_share: number
   tank: { litres: number; text: string }
-  bwssb_min_l: number
+  /** Odisha Development Authorities Rules 2020: 60 L of storage/recharge per m² of roof */
+  rule_min_l: number
+  rule: {
+    name: string
+    short: string
+    l_per_m2: number
+    m3_per_100m2: number
+    mandate_plot_m2: number
+    recharge_plot_m2: number
+  }
+  planned_l: number
+  meets_rule: boolean
+  rule_gap_l: number
   recharge_well: { wells: number; diameter_m: number; depth_m: number; capacity_l: number }
+  downpipes: { count: number; diameter_mm: number }
+  /** Govt. of Odisha CHHATA rooftop rainwater subsidy */
+  chhata: {
+    eligible: boolean
+    reasons: string[]
+    est_cost: number
+    cost_per_m2: number
+    subsidy: number
+    share_of_cost: number
+    max_subsidy: number
+    net_cost: number
+    roof_min_m2: number
+    roof_max_m2: number
+    max_floors: number
+    scheme_years: string
+    portal: string
+    note: string
+  }
   tankers_saved: number
   tanker_savings: number
   wettest_month: number
@@ -223,6 +364,7 @@ export interface Assessment {
   perimeter_m: number
   centroid: LatLng
   polygon: LatLng[]
+  location: LocationInfo
   climate: {
     source: string
     short_source: string
@@ -234,7 +376,7 @@ export interface Assessment {
   }
   solar: Solar
   rain: Rain
-  score: { score: number; grade: string; solar_pts: number; water_pts: number }
+  score: { score: number; grade: string; solar_pts: number; water_pts: number; rule_pts: number }
   layout: { panels: LatLng[][]; max_panels: number | null; orientation?: string; angle?: number }
   params: Defaults & Record<string, unknown>
 }

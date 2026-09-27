@@ -30,21 +30,22 @@ const INITIAL: Check[] = [
   { id: "ai", label: "Roof AI", icon: BrainCircuit, status: "wait", detail: "Segment Anything" },
   { id: "climate", label: "Climate data", icon: CloudSun, status: "wait", detail: "NASA POWER" },
   { id: "imagery", label: "Satellite imagery", icon: Satellite, status: "wait", detail: "Esri World Imagery" },
-  { id: "solar", label: "Solar rules", icon: IndianRupee, status: "wait", detail: "PM Surya Ghar" },
-  { id: "water", label: "Rainwater rules", icon: Droplets, status: "wait", detail: "BWSSB" },
+  { id: "solar", label: "Solar rules", icon: IndianRupee, status: "wait", detail: "PM Surya Ghar + Odisha SFA" },
+  { id: "water", label: "Rainwater rules", icon: Droplets, status: "wait", detail: "ODA Rules 2020 · CHHATA" },
 ]
 
 const FACTS = [
-  "1 kW of rooftop solar in Bengaluru makes about 4.2 units of electricity a day.",
-  "A 150 m² roof catches more than 1 lakh litres of rain every year.",
-  "PM Surya Ghar pays up to ₹78,000 of a home's solar cost.",
-  "Bengaluru asks for 20 litres of rain storage for every m² of roof.",
+  "1 kW of rooftop solar in Bhubaneswar makes about 3.7 units of electricity a day.",
+  "A 150 m² roof in Odisha catches around 2 lakh litres of rain every year.",
+  "PM Surya Ghar pays up to ₹78,000 — and Odisha's SFA adds up to ₹60,000 more.",
+  "Odisha asks for 60 litres of rain storage or recharge for every m² of roof.",
+  "All four Odisha DISCOMs bill the same telescopic slabs: ₹2.90 to ₹6.10 per unit.",
   "Every solar unit avoids about 0.71 kg of CO₂ from the grid.",
   "MobileSAM finds a roof outline in about a second — on a laptop CPU.",
 ]
 
-// Esri tile over south India (z5) - proves the browser can reach the imagery.
-const TILE = "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/5/14/22"
+// Esri tile over Odisha (z5) - proves the browser can reach the imagery.
+const TILE = "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/5/14/23"
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
 async function fetchHealth(timeout = 6000): Promise<{ h: Health; ms: number }> {
@@ -142,7 +143,7 @@ export function PreflightLoader({ onDone }: { onDone: () => void }) {
         const r = await healthP
         if (!r) return { status: "fail", detail: "waiting for server" }
         const c = r.h.specs.climate
-        return { status: "ok", detail: `${c.source} ${c.period.replace("-", "–")} · ${c.offline_cities} cities offline` }
+        return { status: "ok", detail: `${c.source} ${c.period.replace("-", "–")} · ${c.offline_cities} Odisha towns offline` }
       }),
       step(3, "imagery", async () => {
         const [ok, r] = await Promise.all([probeImage(TILE), healthP])
@@ -155,13 +156,16 @@ export function PreflightLoader({ onDone }: { onDone: () => void }) {
         const r = await healthP
         if (!r) return { status: "fail", detail: "waiting for server" }
         const s = r.h.specs.solar
-        return { status: "ok", detail: `${s.scheme} ≤ ₹${fmtIN(s.max_subsidy)} · BESCOM ₹${s.tariff}/unit` }
+        const slabs = s.tariff_slabs ?? []
+        const lo = slabs.length ? slabs[0].rate : 2.9
+        const hi = slabs.length ? slabs[slabs.length - 1].rate : 6.1
+        return { status: "ok", detail: `${s.scheme} ≤ ₹${fmtIN(s.max_subsidy)} · OERC ₹${lo.toFixed(2)}–${hi.toFixed(2)}/unit` }
       }),
       step(5, "water", async () => {
         const r = await healthP
         if (!r) return { status: "fail", detail: "waiting for server" }
         const w = r.h.specs.water
-        return { status: "ok", detail: `${w.rule.replace("Act 2009 ", "")} · ${w.l_per_m2} L per m² of roof` }
+        return { status: "ok", detail: `${w.l_per_m2} L per m² of roof (ODA Rules 2020) · CHHATA ≤ ₹${fmtIN(w.chhata?.max_subsidy ?? 55000)}` }
       }),
     ]
 

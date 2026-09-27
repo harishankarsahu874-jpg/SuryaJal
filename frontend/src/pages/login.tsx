@@ -247,13 +247,13 @@ function BrandPanel() {
           </ul>
           <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.55 }}
             className="mt-10 grid max-w-md grid-cols-3 gap-2 rounded-2xl border border-white/15 bg-white/10 p-3 backdrop-blur-md">
-            {[["2.16 kWp", "solar"], ["3.7 yrs", "payback"], ["1.55 lakh L", "rain / yr"]].map(([v, k]) => (
+            {[["2.70 kWp", "solar"], ["1.3 yrs", "payback"], ["2.37 lakh L", "rain / yr"]].map(([v, k]) => (
               <div key={k} className="rounded-xl bg-white/8 px-2 py-2.5 text-center">
                 <div className="font-heading text-lg font-semibold">{v}</div>
                 <div className="text-[11px] text-white/60">{k}</div>
               </div>
             ))}
-            <div className="col-span-3 px-1 pt-1 text-[11px] text-white/55">Demo roof · Jayanagar, Bengaluru</div>
+            <div className="col-span-3 px-1 pt-1 text-[11px] text-white/55">Demo roof · Ward 27, Bhubaneswar (TPCODL)</div>
           </motion.div>
         </div>
       </div>

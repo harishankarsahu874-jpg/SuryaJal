@@ -4,12 +4,12 @@
   const $ = (s, el = document) => el.querySelector(s);
   const $$ = (s, el = document) => [...el.querySelectorAll(s)];
   const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  // Demo roof: a real house in Ward 27, Bhubaneswar (TPCODL zone), ~177 m².
   const DEMO = {
-    name: 'Demo roof · Jayanagar, Bengaluru',
-    poly: [[12.9285874, 77.5820667], [12.9284642, 77.5820639], [12.9284589, 77.5820694], [12.9284562, 77.5821079],
-      [12.9284589, 77.5821931], [12.9284642, 77.5821986], [12.9284964, 77.5822041], [12.9285821, 77.5822041],
-      [12.9285874, 77.5821931], [12.9285901, 77.5821464]],
+    name: 'Demo roof · Ward 27, Bhubaneswar',
+    poly: [[20.2954465, 85.8139218], [20.2953165, 85.8139877], [20.2953639, 85.8140812], [20.2954939, 85.8140152]],
   };
+  const ODISHA_CENTER = [20.2961, 85.8245];   // Bhubaneswar
 
   // ------------------------------------------------------------------ helpers
   const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
@@ -119,7 +119,7 @@
 
   // ------------------------------------------------------------------ map
   const map = L.map('map', { zoomControl: true, maxZoom: 21, minZoom: 3, worldCopyJump: true })
-    .setView([12.9716, 77.5946], 12);
+    .setView(ODISHA_CENTER, 13);
   const ESRI = 'https://server.arcgisonline.com/ArcGIS/rest/services';
   L.tileLayer(`${ESRI}/World_Imagery/MapServer/tile/{z}/{y}/{x}`, {
     maxNativeZoom: 19, maxZoom: 21,
@@ -407,14 +407,21 @@
       monthly_units: clamp(num('#units', d.monthly_units), 0, 100000),
       family_size: clamp(Math.round(num('#family', d.family_size)), 1, 100),
       roof_type: $('#roofType').value || d.roof_type,
+      floors: clamp(Math.round(num('#floors', d.floors)), 1, 30),
       usable_fraction: clamp(num('#usable', 70), 5, 100) / 100,
-      tariff: clamp(num('#tariff', d.tariff), 0, 50),
+      // blank tariff = bill with the OERC domestic slabs for the units entered
+      tariff: opt('#tariff') === null ? null : clamp(opt('#tariff'), 0, 50),
+      sanctioned_load_kw: clamp(num('#loadKw', d.sanctioned_load_kw), 0, 500),
       cost_per_kw: clamp(num('#costKw', d.cost_per_kw), 10000, 300000),
       panel_w: clamp(Math.round(num('#panelW', d.panel_w)), 100, 800),
       subsidy: $('#subsidy').checked,
+      state_subsidy: $('#stateSubsidy').checked,
       export_rate: opt('#exportRate') === null ? null : clamp(opt('#exportRate'), 0, 20),
       tanker_price: clamp(num('#tankerPrice', d.tanker_price), 0, 20000),
       design_rain_mm: clamp(num('#designRain', d.design_rain_mm), 5, 300),
+      rwh_l_per_m2: clamp(num('#rwhL', d.rwh_l_per_m2), 0, 1000),
+      chhata: $('#chhata').checked,
+      rrhs_cost_per_m2: clamp(num('#rrhsCost', d.rrhs_cost_per_m2), 0, 100000),
       rain_override_mm: rn !== null && rn >= 50 ? Math.min(rn, 12000) : null,
     };
   }
@@ -482,15 +489,19 @@
     $('#scoreNum').textContent = g.score;
     $('#scoreGrade').textContent = `Grade ${g.grade}`;
     $('#scoreGrade').style.color = ring.style.stroke;
-    $('#solarBar').style.width = `${(g.solar_pts / 60) * 100}%`;
-    $('#waterBar').style.width = `${(g.water_pts / 40) * 100}%`;
-    $('#solarPts').textContent = `${g.solar_pts}/60`;
-    $('#waterPts').textContent = `${g.water_pts}/40`;
+    $('#solarBar').style.width = `${(g.solar_pts / 55) * 100}%`;
+    $('#waterBar').style.width = `${(g.water_pts / 35) * 100}%`;
+    $('#ruleBar').style.width = `${((g.rule_pts || 0) / 10) * 100}%`;
+    $('#solarPts').textContent = `${g.solar_pts}/55`;
+    $('#waterPts').textContent = `${g.water_pts}/35`;
+    $('#rulePts').textContent = `${g.rule_pts || 0}/10`;
     const water = w.coverage >= 1 ? `all of your family’s water (${Math.round(w.coverage * 100)}% of yearly use)`
       : `${Math.round(w.coverage * 100)}% of your family’s yearly water`;
-    $('#scoreLine').textContent = s.panels
+    const loc = r.location || {};
+    $('#scoreLine').textContent = (s.panels
       ? `Your roof can cover ${Math.round(s.coverage * 100)}% of your electricity and ${water}.`
-      : `Too small for solar panels, but it can still provide ${water}.`;
+      : `Too small for solar panels, but it can still provide ${water}.`) +
+      (loc.district ? ` ${loc.district} district · ${loc.discom}.` : '');
 
     // solar
     const lim = s.limited_by === 'roof' ? 'roof space' : 'your electricity use';
@@ -502,8 +513,12 @@
           ['Payback', payback, 'then free power']),
         kpi('System size', `${s.kw.toFixed(2)} kW`, `${s.panels} × ${p.panel_w} Wp panels`),
         kpi('Units / year', fmtIN(s.annual_gen), `≈ ${fmtIN(s.annual_gen / 12)} units/month`),
-        kpi('Cost after subsidy', rupees(s.net_cost), `${rupees(s.gross_cost)} − ${rupees(s.subsidy)}`),
-        kpi('PM Surya Ghar subsidy', rupees(s.subsidy), s.subsidy ? 'central subsidy (homes)' : 'not applied'),
+        kpi('Cost after subsidy', rupees(s.net_cost),
+          `${rupees(s.gross_cost)} − ${rupees(s.subsidy_central)} central − ${rupees(s.subsidy_state)} Odisha SFA`),
+        kpi('PM Surya Ghar subsidy', rupees(s.subsidy_central), s.subsidy_central ? 'central subsidy (homes)' : 'not applied'),
+        kpi('Odisha SFA subsidy', rupees(s.subsidy_state), s.subsidy_state ? 'state top-up · Cabinet Jan 2025' : 'not applied'),
+        kpi('Your bill today', rupees(s.bill_before),
+          `${fmtIN(s.annual_units)} units/yr → ${rupees(s.bill_after)} with solar`),
         kpi(`${s.lifetime_years}-year savings`, rupees(s.lifetime_savings), `net gain ${rupees(s.lifetime_profit)}`),
         kpi('CO₂ avoided', `${s.co2_t_year.toFixed(1)} t/yr`, `${fmtIN(s.co2_t_life)} t in ${s.lifetime_years} yrs`),
         kpi('Like planting', `${fmtIN(s.trees_equiv)} trees`, '≈ 20 kg CO₂ per tree per year'),
@@ -516,7 +531,8 @@
         ? `Your roof space limits the size (needs ~${p.m2_per_kw} m² per kW).`
         : (s.full_roof_kw > s.kw + 0.2 ? `Your roof could hold up to ${s.full_roof_kw.toFixed(1)} kW if you want to sell more power.` : '');
       $('#solarFoot').textContent = `Sized by ${lim}. Here 1 kW makes ~${s.daily_units_per_kw.toFixed(1)} units/day. ` +
-        `Surplus is exported at ₹${s.export_rate.toFixed(2)}/unit (KERC 2026). ${extra}`;
+        `OERC net metering: surplus carries forward inside the year and what is left on 31 March is settled at ` +
+        `₹${s.export_rate.toFixed(2)}/unit, credited up to ${Math.round(s.net_meter_cap * 100)}% of your yearly use. ${extra}`;
     } else {
       $('#solarKpis').innerHTML = kpi('Roof too small', `${fmtIN(s.usable_area_m2)} m² usable`,
         `one ${p.panel_w} Wp panel needs ~${(p.panel_w / 1000 * p.m2_per_kw).toFixed(1)} m² — try a bigger usable %`, true);
@@ -533,15 +549,20 @@
       kpi('Water for', `${fmtIN(w.days_of_water)} days`, `family of ${p.family_size} @ ${p.lpcd} L/day each`),
       kpi('Storage tank', `${fmtIN(w.tank.litres)} L`, `${w.tank.text} · holds a ${p.design_rain_mm} mm rain day`),
       kpi('Recharge well', `${wl.wells > 1 ? wl.wells + ' × ' : ''}${wl.diameter_m} m Ø × ${wl.depth_m} m`, `holds ${fmtIN(wl.capacity_l)} L`),
-      kpi('BWSSB minimum', `${fmtIN(w.bwssb_min_l)} L`, '20 L per m² of roof (Bengaluru law)'),
+      kpi('Odisha rule', `${fmtIN(w.rule_min_l)} L`,
+        `${w.rule.l_per_m2} L per m² of roof · ODA Rules 2020 · ${w.meets_rule ? 'met' : 'short by ' + litres(w.rule_gap_l)}`),
+      kpi('CHHATA subsidy', w.chhata.eligible ? rupees(w.chhata.subsidy) : 'not eligible',
+        w.chhata.eligible
+          ? `50% of ~${rupees(w.chhata.est_cost)} · Govt. of Odisha`
+          : (w.chhata.reasons[0] || 'see the scheme rules')),
       kpi('Water money saved', rupees(w.tanker_savings), `at ₹${fmtIN(p.tanker_price)} per tanker`),
-      kpi('Wettest month', MONTHS[w.wettest_month], `${litres(w.wettest_harvest_l)} that month`),
+      kpi('Downpipes needed', `${w.downpipes.count} × ${w.downpipes.diameter_mm} mm`, 'ODA Rules: 2 per 100 m² of roof'),
     ].join('');
     $('#rainChart').innerHTML = barChart(w.monthly_harvest_l, {
       color: '#0EA5E9', line: w.monthly_demand_l, barName: 'Rainwater harvest (L)', lineName: 'Family water use', unit: 'L',
     });
     $('#rainFoot').textContent = 'Solar panels don’t reduce rainwater — rain runs off the panels into the same pipes. ' +
-      `Climate: ${r.climate.source}.`;
+      `${Math.round(w.monsoon_share * 100)}% of your harvest lands in the Jul–Oct monsoon. Climate: ${r.climate.source}.`;
     $('#climateSrc').textContent = `Climate for this roof: ${r.climate.source}. Average sunlight ${r.climate.ghi_avg.toFixed(2)} kWh/m²/day, ` +
       `performance ratio ${s.pr_avg.toFixed(2)} (temperature-corrected).`;
   }
@@ -552,13 +573,19 @@
     q.set('p', encodePolyline(S.roof.latlngs));
     q.set('u', i.monthly_units); q.set('f', i.family_size); q.set('rt', i.roof_type);
     q.set('uf', Math.round(i.usable_fraction * 100));
-    if (i.tariff !== d.tariff) q.set('t', i.tariff);
+    if (i.tariff !== null) q.set('t', i.tariff);
+    if (i.sanctioned_load_kw !== d.sanctioned_load_kw) q.set('sl', i.sanctioned_load_kw);
+    if (i.floors !== d.floors) q.set('fl', i.floors);
     if (i.cost_per_kw !== d.cost_per_kw) q.set('c', i.cost_per_kw);
     if (i.panel_w !== d.panel_w) q.set('pw', i.panel_w);
     if (!i.subsidy) q.set('s', '0');
+    if (!i.state_subsidy) q.set('ss', '0');
     if (i.export_rate !== null) q.set('ex', i.export_rate);
     if (i.tanker_price !== d.tanker_price) q.set('tp', i.tanker_price);
     if (i.design_rain_mm !== d.design_rain_mm) q.set('dr', i.design_rain_mm);
+    if (i.rwh_l_per_m2 !== d.rwh_l_per_m2) q.set('rl', i.rwh_l_per_m2);
+    if (!i.chhata) q.set('ch', '0');
+    if (i.rrhs_cost_per_m2 !== d.rrhs_cost_per_m2) q.set('rc', i.rrhs_cost_per_m2);
     if (i.rain_override_mm !== null) q.set('rn', i.rain_override_mm);
     const a = $('#addressInput').value.trim();
     if (a) q.set('a', a.slice(0, 120));
@@ -606,7 +633,9 @@
   function pickResult(r) {
     results.hidden = true;
     flyTo(r.lat, r.lon, zoomFor(r.type));
-    setHint('Zoom in to your house and <b>tap its roof</b> 👆');
+    setHint(r.discom
+      ? `Zoom in to your house in <b>${esc(r.district || 'Odisha')}</b> (${esc(r.discom)}) and <b>tap its roof</b> 👆`
+      : 'Zoom in to your house and <b>tap its roof</b> 👆');
   }
   $('#searchForm').addEventListener('submit', async e => {
     e.preventDefault();
@@ -616,11 +645,12 @@
     if (m) { results.hidden = true; flyTo(+m[1], +m[2], 19); return; }
     try {
       const res = await api(`/api/geocode?q=${encodeURIComponent(q)}`);
-      if (!res.length) return toast('No place found — try a nearby landmark, area or PIN code', 'warn');
+      if (!res.length) return toast('No place found in Odisha — try a town, landmark or PIN code', 'warn');
       if (res.length === 1) return pickResult(res[0]);
       results.innerHTML = res.map((r, i) => {
         const [head, ...rest] = r.name.split(', ');
-        return `<li data-i="${i}"><b>${esc(head)}</b><small>${esc(rest.slice(0, 4).join(', '))}</small></li>`;
+        const where = r.district ? `${r.district} district · ${r.discom} · ` : '';
+        return `<li data-i="${i}"><b>${esc(head)}</b><small>${esc(where + rest.slice(0, 3).join(', '))}</small></li>`;
       }).join('');
       results.hidden = false;
       $$('li', results).forEach(li => li.addEventListener('click', () => pickResult(res[+li.dataset.i])));
@@ -636,7 +666,16 @@
       flyTo(lat, lon, 19);
       if (meMarker) meMarker.remove();
       meMarker = L.marker([lat, lon], { icon: icon('me-dot'), interactive: false }).addTo(map);
-      toast(`You are here (±${Math.round(accuracy)} m). Now tap your roof!`, 'ok');
+      // which district / Odisha DISCOM serves this spot?
+      api(`/api/odisha/locate?lat=${lat.toFixed(5)}&lon=${lon.toFixed(5)}`)
+        .then(l => {
+          if (!l.in_odisha) {
+            return toast('SuryaJal is built for Odisha — tariffs, subsidies and rainwater rules are Odisha’s. ' +
+              'You can still explore, but the numbers won’t apply here.', 'warn', 8000);
+          }
+          toast(`You are here (±${Math.round(accuracy)} m) — ${l.district} district, ${l.discom}. Now tap your roof!`, 'ok');
+        })
+        .catch(() => toast(`You are here (±${Math.round(accuracy)} m). Now tap your roof!`, 'ok'));
     }, () => toast('Could not get your location — allow location access, or search instead', 'warn'),
     { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 });
   });
@@ -655,7 +694,13 @@
   });
 
   // ------------------------------------------------------------------ inputs wiring
-  function allInRate() { return num('#tariff', 6.82) * 1.28; }
+  // all-in ₹/unit: your own flat rate if you typed one, else the OERC slab bill the backend computed
+  function allInRate() {
+    const own = opt('#tariff');
+    if (own !== null && own > 0) return own * 1.04 + 20 / Math.max(1, num('#units', 250)) * 1.04;
+    const s = S.result && S.result.solar;
+    return s && s.tariff > 0 ? s.tariff : 5.05;
+  }
   $('#usable').addEventListener('input', () => { $('#usableVal').textContent = `${$('#usable').value}%`; });
   $('#billAmt').addEventListener('input', () => {
     const b = parseFloat($('#billAmt').value);
@@ -690,12 +735,18 @@
   }
 
   function applyDefaults(d) {
-    $('#tariff').value = d.tariff;
+    $('#tariff').value = d.tariff === null ? '' : d.tariff;   // blank = OERC slabs
+    $('#loadKw').value = d.sanctioned_load_kw;
+    $('#floors').value = d.floors;
     $('#costKw').value = d.cost_per_kw;
     $('#panelW').value = d.panel_w;
     $('#tankerPrice').value = d.tanker_price;
     $('#designRain').value = d.design_rain_mm;
+    $('#rwhL').value = d.rwh_l_per_m2;
+    $('#rrhsCost').value = d.rrhs_cost_per_m2;
     $('#subsidy').checked = !!d.subsidy;
+    $('#stateSubsidy').checked = !!d.state_subsidy;
+    $('#chhata').checked = !!d.chhata;
     $('#units').value = d.monthly_units;
     $('#family').value = d.family_size;
     $('#usable').value = Math.round(d.usable_fraction * 100);
@@ -712,9 +763,12 @@
     const set = (id, k) => { if (q.has(k)) $(id).value = q.get(k); };
     set('#units', 'u'); set('#family', 'f'); set('#tariff', 't'); set('#costKw', 'c'); set('#panelW', 'pw');
     set('#exportRate', 'ex'); set('#tankerPrice', 'tp'); set('#designRain', 'dr'); set('#rainOverride', 'rn');
+    set('#loadKw', 'sl'); set('#floors', 'fl'); set('#rwhL', 'rl'); set('#rrhsCost', 'rc');
     if (q.has('rt')) $('#roofType').value = q.get('rt');
     if (q.has('uf')) { $('#usable').value = q.get('uf'); $('#usableVal').textContent = `${q.get('uf')}%`; }
     if (q.get('s') === '0') $('#subsidy').checked = false;
+    if (q.get('ss') === '0') $('#stateSubsidy').checked = false;
+    if (q.get('ch') === '0') $('#chhata').checked = false;
     if (q.has('a')) { $('#addressInput').value = q.get('a'); S.addressAuto = false; }
     setRoof(poly, q.get('m') === 'ai' ? 'ai' : 'manual', q.has('cf') ? +q.get('cf') : null, { fit: true });
     $('#refineBar').hidden = true;

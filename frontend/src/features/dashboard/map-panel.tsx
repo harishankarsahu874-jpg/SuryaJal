@@ -6,14 +6,14 @@ import { toast } from "sonner"
 import {
   ArrowRight, Check, Eraser, Loader2, Minus, PenLine, Plus, RotateCcw, Search, Sparkles, Undo2, X,
 } from "lucide-react"
-import { api, type SegmentResponse } from "@/lib/api"
-import { areaM2, type LatLng } from "@/lib/geo"
+import { api, type LocationInfo, type SegmentResponse } from "@/lib/api"
+import { areaM2, ODISHA_CENTER, ODISHA_CITIES, ODISHA_ZOOM, type LatLng } from "@/lib/geo"
 import { fmtIN, litres, sqft } from "@/lib/format"
 import { cn } from "@/lib/utils"
 import { useDashboard } from "./state"
 
 type SegPoint = { lat: number; lon: number; label: 0 | 1 }
-type GeoResult = { name: string; lat: number; lon: number; type: string }
+type GeoResult = { name: string; lat: number; lon: number; type: string; district?: string | null; discom?: string | null }
 
 const ESRI = "https://server.arcgisonline.com/ArcGIS/rest/services"
 const clamp = (v: number, a: number, b: number) => Math.min(b, Math.max(a, v))
@@ -42,7 +42,7 @@ export function MapPanel({ visible }: { visible: boolean }) {
   } | null>(null)
   // interaction state lives in a ref (Leaflet handlers are registered once) + a tick to re-render the UI
   const S = useRef({ mode: "ai" as "ai" | "draw", busy: false, aiPoints: [] as SegPoint[], refine: null as 0 | 1 | null,
-    drawPts: [] as LatLng[], warned: false, zoom: 12 }).current
+    drawPts: [] as LatLng[], warned: false, zoom: ODISHA_ZOOM }).current
   const [, tick] = useReducer((x: number) => x + 1, 0)
   const [hint, setHintState] = useState<{ html: ReactNode; busy?: boolean }>({ html: <>Search your area, zoom in and <b>tap your roof</b></> })
   const [liveArea, setLiveArea] = useState<number | null>(null)
@@ -60,7 +60,7 @@ export function MapPanel({ visible }: { visible: boolean }) {
   useEffect(() => {
     if (!elRef.current || mapRef.current) return
     const map = L.map(elRef.current, { zoomControl: false, maxZoom: 21, minZoom: 3, worldCopyJump: true })
-      .setView([12.9716, 77.5946], 12)
+      .setView(ODISHA_CENTER, ODISHA_ZOOM)          // Bhubaneswar, Odisha
     mapRef.current = map
     L.tileLayer(`${ESRI}/World_Imagery/MapServer/tile/{z}/{y}/{x}`, {
       maxNativeZoom: 19, maxZoom: 21,
@@ -367,7 +367,17 @@ export function MapPanel({ visible }: { visible: boolean }) {
       map.flyTo([lat, lon], 19, { duration: 1.2 })
       if (ly.me) ly.me.remove()
       ly.me = L.marker([lat, lon], { icon: divIcon("sj-me"), interactive: false }).addTo(map)
-      toast.success(`You are here (±${Math.round(accuracy)} m). Now tap your roof!`)
+      // tell the user which district and which Odisha DISCOM serves this spot
+      api<LocationInfo>(`/api/odisha/locate?lat=${lat.toFixed(5)}&lon=${lon.toFixed(5)}`)
+        .then((l) => {
+          if (!l.in_odisha) {
+            toast.warning("SuryaJal is built for Odisha — tariffs, subsidies and rainwater rules " +
+              "are Odisha's. You can still explore, but the numbers won't apply here.")
+            return
+          }
+          toast.success(`You are here (±${Math.round(accuracy)} m) — ${l.district} district, ${l.discom}. Now tap your roof!`)
+        })
+        .catch(() => toast.success(`You are here (±${Math.round(accuracy)} m). Now tap your roof!`))
     }, () => toast.warning("Could not get your location — allow location access, or search instead"),
     { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 })
   }
@@ -412,8 +422,22 @@ export function MapPanel({ visible }: { visible: boolean }) {
 
       {/* search + hint */}
       <div className="absolute inset-x-3 top-3 z-[500] flex flex-col items-start gap-2 sm:left-4 sm:right-auto sm:w-[400px]">
-        <SearchBox onPick={(g) => { mapRef.current?.flyTo([g.lat, g.lon], zoomFor(g.type), { duration: 1.2 }); setHint(<>Zoom in to your house and <b>tap its roof</b> 👆</>) }}
+        <SearchBox onPick={(g) => {
+            mapRef.current?.flyTo([g.lat, g.lon], zoomFor(g.type), { duration: 1.2 })
+            setHint(g.discom
+              ? <>Zoom in to your house in <b>{g.district}</b> ({g.discom}) and <b>tap its roof</b> 👆</>
+              : <>Zoom in to your house and <b>tap its roof</b> 👆</>)
+          }}
           onLatLon={(lat, lon) => mapRef.current?.flyTo([lat, lon], 19, { duration: 1.2 })} />
+        <div className="no-scrollbar flex max-w-full items-center gap-1.5 overflow-x-auto pb-0.5">
+          {ODISHA_CITIES.map((c) => (
+            <button key={c.name} type="button"
+              onClick={() => { mapRef.current?.flyTo([c.lat, c.lon], c.zoom, { duration: 1.1 }); setHint(<>Zoom in to your house and <b>tap its roof</b> 👆</>) }}
+              className="shrink-0 rounded-full bg-white/90 px-2.5 py-1 text-[11px] font-semibold text-sage-800 shadow backdrop-blur hover:bg-white">
+              {c.name}
+            </button>
+          ))}
+        </div>
         <div className={cn(
           "inline-flex max-w-full items-center gap-2 rounded-full bg-sage-950/80 px-3.5 py-2 text-[13px] text-white shadow-lg backdrop-blur",
           hint.busy && "pr-4",
@@ -552,7 +576,7 @@ function SearchBox({ onPick, onLatLon }: { onPick: (g: GeoResult) => void; onLat
     <form ref={boxRef} onSubmit={submit} className="relative w-full" role="search" autoComplete="off">
       <div className="flex h-12 items-center gap-2 rounded-2xl border bg-card/95 pr-1.5 pl-3.5 shadow-lg backdrop-blur focus-within:ring-3 focus-within:ring-ring/40">
         <Search className="size-[18px] shrink-0 text-muted-foreground" />
-        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search area, street or landmark…"
+        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search a town, area or PIN code in Odisha…"
           aria-label="Search a place" className="h-full min-w-0 flex-1 bg-transparent text-[15px] outline-none placeholder:text-muted-foreground" />
         {q && (
           <button type="button" onClick={() => { setQ(""); setResults([]) }} className="grid size-8 place-items-center rounded-lg text-muted-foreground hover:bg-secondary" aria-label="Clear search">
@@ -574,7 +598,9 @@ function SearchBox({ onPick, onLatLon }: { onPick: (g: GeoResult) => void; onLat
                   <button type="button" onClick={() => { setResults([]); onPick(r) }}
                     className="flex w-full flex-col items-start rounded-xl px-3 py-2 text-left hover:bg-secondary">
                     <span className="text-sm font-semibold">{head}</span>
-                    <span className="line-clamp-1 text-xs text-muted-foreground">{rest.slice(0, 4).join(", ")}</span>
+                    <span className="line-clamp-1 text-xs text-muted-foreground">
+                      {r.district ? `${r.district} district · ${r.discom} · ` : ""}{rest.slice(0, 3).join(", ")}
+                    </span>
                   </button>
                 </li>
               )

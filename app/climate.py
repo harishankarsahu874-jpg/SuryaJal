@@ -54,13 +54,19 @@ def _haversine_km(a, b):
 
 
 def fallback(lat: float, lon: float) -> Optional[dict]:
+    """NASA POWER climatology bundled offline for every district of Odisha."""
     if not FALLBACK_CLIMATE_FILE.exists():
         return None
     cities = json.loads(FALLBACK_CLIMATE_FILE.read_text())["cities"]
     best = min(cities, key=lambda c: _haversine_km((lat, lon), (c["lat"], c["lon"])))
     d = _haversine_km((lat, lon), (best["lat"], best["lon"]))
+    where = best["name"]
+    if best.get("district") and best["district"] != best["name"]:
+        where = f"{best['name']}, {best['district']} district"
     return {"ghi": best["ghi"], "rain_mm_day": best["rain_mm_day"], "t2m": best["t2m"],
-            "source": f"Offline data: {best['name']} ({d:.0f} km away), NASA POWER 2001-2020",
+            "source": (f"Offline NASA POWER climatology for {where} ({d:.0f} km away), "
+                       f"2001-2020 average"),
+            "district": best.get("district"), "discom": best.get("discom"),
             "offline": True}
 
 

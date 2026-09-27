@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>SuryaJal — AI Rooftop Solar + Rainwater Planner</title>
-<meta name="description" content="Tap your roof on the satellite map. AI outlines it and shows your solar power, subsidy, payback and rainwater harvest in seconds.">
+<title>SuryaJal — AI Rooftop Solar + Rainwater Planner for Odisha</title>
+<meta name="description" content="Tap your roof on the satellite map. AI outlines it and sizes rooftop solar with the OERC tariff, PM Surya Ghar + Odisha SFA subsidies and net metering, plus rainwater harvesting under the Odisha rules and the CHHATA subsidy.">
 <meta name="theme-color" content="#0B1320">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='26' cy='26' r='14' fill='%23F59E0B'/%3E%3Cpath d='M44 22c6 9 11 15 11 21a11 11 0 0 1-22 0c0-6 5-12 11-21z' fill='%230EA5E9'/%3E%3C/svg%3E">
 <link rel="stylesheet" href="/static/vendor/leaflet/leaflet.css">
@@ -25,11 +25,11 @@
     </svg>
     <div class="brand-text">
       <h1>SuryaJal</h1>
-      <p>AI rooftop solar + rainwater planner</p>
+      <p>AI rooftop solar + rainwater planner · Odisha</p>
     </div>
   </div>
   <form id="searchForm" class="search" autocomplete="off" role="search">
-    <input id="searchInput" type="search" placeholder="Search area, street or landmark… or paste “lat, lon”" aria-label="Search a place">
+    <input id="searchInput" type="search" placeholder="Search a town, area or PIN code in Odisha… or paste “lat, lon”" aria-label="Search a place">
     <button type="submit" class="btn primary small">Search</button>
     <ul id="searchResults" class="results" hidden></ul>
   </form>
@@ -64,12 +64,14 @@
 
     <div class="card intro" id="introCard">
       <h2>Your roof can make power <em>and</em> water 🌞💧</h2>
+      <p class="muted small">Built for Odisha: OERC slab tariffs, net metering with TPCODL / TPNODL / TPWODL / TPSODL,
+      PM Surya Ghar + Odisha SFA subsidies, the ODA rainwater rule and the CHHATA subsidy.</p>
       <ol class="steps">
         <li><b>Find your house</b> — search your area or tap 📍</li>
         <li><b>Tap your roof</b> — AI (Segment Anything) outlines it</li>
         <li><b>Get your Green Roof Report</b> — solar kW, subsidy, payback, rainwater tank</li>
       </ol>
-      <button type="button" class="btn secondary" id="demoBtn">✨ Try a demo roof (Jayanagar, Bengaluru)</button>
+      <button type="button" class="btn secondary" id="demoBtn">✨ Try a demo roof (Bhubaneswar)</button>
     </div>
 
     <div class="card" id="roofCard" hidden>
@@ -81,7 +83,7 @@
       <p class="muted small" id="roofNote"></p>
       <label class="field">
         <span>Name / address on report</span>
-        <input type="text" id="addressInput" maxlength="120" placeholder="e.g. Sharma family, 4th Block Jayanagar">
+        <input type="text" id="addressInput" maxlength="120" placeholder="e.g. Sahu family, Sahid Nagar, Bhubaneswar">
       </label>
       <div class="grid2">
         <label class="field">
@@ -114,7 +116,7 @@
           <span>Monthly bill ₹</span>
           <input type="number" id="billAmt" min="0" step="50" placeholder="e.g. 2000" inputmode="numeric">
         </label>
-        <p class="muted tiny">We estimate units ≈ bill ÷ ₹<span id="allInRate">8.7</span> (BESCOM average incl. fixed charges &amp; tax).</p>
+        <p class="muted tiny">We estimate units ≈ bill ÷ ₹<span id="allInRate">5.1</span> (your all-in OERC rate: slab tariff + ₹20/kW fixed charge + 4% duty).</p>
       </details>
     </div>
 
@@ -131,8 +133,9 @@
           <h3>Green Score</h3>
           <p id="scoreLine" class="muted"></p>
           <div class="mini-bars">
-            <div><span>☀️ Solar</span><i><em id="solarBar"></em></i><b id="solarPts">0/60</b></div>
-            <div><span>💧 Water</span><i><em id="waterBar"></em></i><b id="waterPts">0/40</b></div>
+            <div><span>☀️ Solar</span><i><em id="solarBar"></em></i><b id="solarPts">0/55</b></div>
+            <div><span>💧 Water</span><i><em id="waterBar"></em></i><b id="waterPts">0/35</b></div>
+            <div><span>📏 Odisha rule</span><i><em id="ruleBar"></em></i><b id="rulePts">0/10</b></div>
           </div>
         </div>
       </div>
@@ -181,14 +184,20 @@
     <details class="card assumptions" id="assumptions">
       <summary>⚙️ Assumptions (editable) &amp; data sources</summary>
       <div class="grid2">
-        <label class="field"><span>Electricity tariff ₹/unit</span><input type="number" id="tariff" step="0.01" min="0"></label>
+        <label class="field"><span>Tariff ₹/unit <small>(blank = OERC slabs)</small></span><input type="number" id="tariff" step="0.01" min="0" placeholder="auto"></label>
+        <label class="field"><span>Sanctioned load (kW)</span><input type="number" id="loadKw" step="0.5" min="0" max="500"></label>
         <label class="field"><span>Installed cost ₹/kW</span><input type="number" id="costKw" step="500" min="10000"></label>
         <label class="field"><span>Panel size (Wp)</span><input type="number" id="panelW" step="5" min="100" max="800"></label>
-        <label class="field"><span>Export rate ₹/unit <small>(blank = KERC auto)</small></span><input type="number" id="exportRate" step="0.01" min="0" placeholder="auto"></label>
+        <label class="field"><span>Export rate ₹/unit <small>(blank = GRIDCO APPC)</small></span><input type="number" id="exportRate" step="0.01" min="0" placeholder="auto"></label>
+        <label class="field"><span>Floors in building</span><input type="number" id="floors" step="1" min="1" max="30"></label>
+        <label class="field"><span>Rule: L per m² of roof</span><input type="number" id="rwhL" step="5" min="0" max="1000"></label>
+        <label class="field"><span>Rainwater system ₹/m²</span><input type="number" id="rrhsCost" step="50" min="0"></label>
         <label class="field"><span>Tanker price ₹ (6,000 L)</span><input type="number" id="tankerPrice" step="50" min="0"></label>
         <label class="field"><span>Heavy-rain day for tank (mm)</span><input type="number" id="designRain" step="5" min="5" max="300"></label>
         <label class="field"><span>Annual rainfall mm <small>(blank = NASA)</small></span><input type="number" id="rainOverride" step="10" min="50" placeholder="auto"></label>
-        <label class="field check"><input type="checkbox" id="subsidy" checked> <span>PM Surya Ghar subsidy (homes)</span></label>
+        <label class="field check"><input type="checkbox" id="subsidy" checked> <span>PM Surya Ghar subsidy (central)</span></label>
+        <label class="field check"><input type="checkbox" id="stateSubsidy" checked> <span>Odisha SFA state subsidy</span></label>
+        <label class="field check"><input type="checkbox" id="chhata" checked> <span>CHHATA rainwater subsidy</span></label>
       </div>
       <p class="muted tiny" id="climateSrc"></p>
       <ul class="sources" id="sourcesList"></ul>
@@ -197,7 +206,8 @@
     <footer class="credits">
       <p>Built by the Renewable Energy Club · MobileSAM (Segment Anything) + FastAPI + Leaflet.
       Satellite imagery © Esri, Maxar, Earthstar Geographics. Climate: NASA POWER. Search: © OpenStreetMap contributors.</p>
-      <p>Screening estimate for awareness — get a site survey from an MNRE-empanelled vendor before buying.</p>
+      <p>Screening estimate for awareness — get a site survey from an MNRE/OREDA-empanelled vendor and register for net
+      metering with your Odisha DISCOM before buying.</p>
     </footer>
   </aside>
 </main>

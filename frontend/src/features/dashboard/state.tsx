@@ -4,7 +4,7 @@ import {
 } from "react"
 import { toast } from "sonner"
 import { api, type AppConfig, type Assessment } from "@/lib/api"
-import { centroid, decodePolyline, DEMO_ROOF, encodePolyline, type LatLng } from "@/lib/geo"
+import { centroid, decodePolyline, DEMO_ROOF, DEMO_ROOFS, encodePolyline, type LatLng } from "@/lib/geo"
 
 export type RoofMethod = "ai" | "ai-edited" | "manual"
 export type Tab = "map" | "solar" | "rain" | "report"
@@ -20,15 +20,29 @@ export interface Roof {
 export interface Inputs {
   monthly_units: number
   family_size: number
+  floors: number
   roof_type: string
   usable_pct: number
-  tariff: number
+  /** null = bill with the OERC domestic slabs for the units entered */
+  tariff: number | null
+  /** sanctioned load in kW - drives the ₹20/kW/month fixed charge and the net-meter limit */
+  sanctioned_load_kw: number
   cost_per_kw: number
   panel_w: number
+  /** PM Surya Ghar central financial assistance */
   subsidy: boolean
+  /** Odisha State Financial Assistance on top of it */
+  state_subsidy: boolean
   export_rate: number | null
+  /** OERC net-metering cap, in % of yearly consumption (90 by default) */
+  net_meter_pct: number
   tanker_price: number
   design_rain_mm: number
+  /** Odisha Development Authorities Rules 2020: litres of storage/recharge per m² of roof */
+  rwh_l_per_m2: number
+  /** Govt. of Odisha CHHATA rooftop rainwater subsidy */
+  chhata: boolean
+  rrhs_cost_per_m2: number
   rain_override_mm: number | null
   /** user-chosen number of panels; null = auto-size to the bill */
   panels: number | null
@@ -50,7 +64,8 @@ interface DashboardCtx {
   roof: Roof | null
   setRoof: (latlngs: LatLng[], method: RoofMethod, conf?: number | null, opts?: SetRoofOpts) => void
   clearRoof: () => void
-  loadDemo: () => void
+  /** load one of the three bundled Odisha demo roofs (default: Bhubaneswar) */
+  loadDemo: (id?: string) => void
   inputs: Inputs
   setInput: <K extends keyof Inputs>(key: K, value: Inputs[K]) => void
   address: string
@@ -67,9 +82,11 @@ interface DashboardCtx {
 const Ctx = createContext<DashboardCtx | null>(null)
 
 const FALLBACK_INPUTS: Inputs = {
-  monthly_units: 250, family_size: 4, roof_type: "rcc", usable_pct: 70, tariff: 6.82, cost_per_kw: 65000,
-  panel_w: 540, subsidy: true, export_rate: null, tanker_price: 800, design_rain_mm: 50,
-  rain_override_mm: null, panels: null,
+  monthly_units: 250, family_size: 4, floors: 2, roof_type: "rcc", usable_pct: 70,
+  tariff: null, sanctioned_load_kw: 3, cost_per_kw: 55000, panel_w: 540,
+  subsidy: true, state_subsidy: true, export_rate: null, net_meter_pct: 90,
+  tanker_price: 800, design_rain_mm: 100, rwh_l_per_m2: 60, chhata: true,
+  rrhs_cost_per_m2: 600, rain_override_mm: null, panels: null,
 }
 
 const clamp = (v: number, a: number, b: number) => Math.min(b, Math.max(a, v))
@@ -82,13 +99,20 @@ export function buildQuery(roof: Roof, i: Inputs, config: AppConfig | null, addr
   q.set("f", String(i.family_size))
   q.set("rt", i.roof_type)
   q.set("uf", String(i.usable_pct))
-  if (!d || i.tariff !== d.tariff) q.set("t", String(i.tariff))
+  if (i.tariff !== null) q.set("t", String(i.tariff))
+  if (!d || i.sanctioned_load_kw !== d.sanctioned_load_kw) q.set("sl", String(i.sanctioned_load_kw))
+  if (!d || i.floors !== d.floors) q.set("fl", String(i.floors))
   if (!d || i.cost_per_kw !== d.cost_per_kw) q.set("c", String(i.cost_per_kw))
   if (!d || i.panel_w !== d.panel_w) q.set("pw", String(i.panel_w))
   if (!i.subsidy) q.set("s", "0")
+  if (!i.state_subsidy) q.set("ss", "0")
   if (i.export_rate !== null) q.set("ex", String(i.export_rate))
+  if (!d || i.net_meter_pct !== Math.round(d.net_meter_cap * 100)) q.set("nc", String(i.net_meter_pct))
   if (!d || i.tanker_price !== d.tanker_price) q.set("tp", String(i.tanker_price))
   if (!d || i.design_rain_mm !== d.design_rain_mm) q.set("dr", String(i.design_rain_mm))
+  if (!d || i.rwh_l_per_m2 !== d.rwh_l_per_m2) q.set("rl", String(i.rwh_l_per_m2))
+  if (!i.chhata) q.set("ch", "0")
+  if (!d || i.rrhs_cost_per_m2 !== d.rrhs_cost_per_m2) q.set("rc", String(i.rrhs_cost_per_m2))
   if (i.rain_override_mm !== null) q.set("rn", String(i.rain_override_mm))
   if (i.panels !== null) q.set("n", String(i.panels))
   if (address.trim()) q.set("a", address.trim().slice(0, 120))
@@ -142,10 +166,12 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
     setAddressState(v)
   }, [])
 
-  const loadDemo = useCallback(() => {
+  const loadDemo = useCallback((id?: string) => {
+    const d = DEMO_ROOFS.find((r) => r.id === id) ?? DEMO_ROOF
     addressAuto.current = false
-    setAddressState(DEMO_ROOF.name)
-    setRoof(DEMO_ROOF.poly, "ai", 1.0, { fit: true })
+    setAddressState(d.name)
+    setRoof(d.poly, "ai", 1.0, { fit: true })
+    mapApi.current?.flyTo(d.lat, d.lon, d.zoom)
   }, [setRoof])
 
   const setInput = useCallback(<K extends keyof Inputs>(key: K, value: Inputs[K]) => {
@@ -162,9 +188,13 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
         const d = c.defaults
         const base: Inputs = {
           ...FALLBACK_INPUTS,
-          monthly_units: d.monthly_units, family_size: d.family_size, roof_type: d.roof_type,
-          usable_pct: Math.round(d.usable_fraction * 100), tariff: d.tariff, cost_per_kw: d.cost_per_kw,
-          panel_w: d.panel_w, subsidy: d.subsidy, tanker_price: d.tanker_price, design_rain_mm: d.design_rain_mm,
+          monthly_units: d.monthly_units, family_size: d.family_size, floors: d.floors,
+          roof_type: d.roof_type, usable_pct: Math.round(d.usable_fraction * 100),
+          tariff: d.tariff, sanctioned_load_kw: d.sanctioned_load_kw, cost_per_kw: d.cost_per_kw,
+          panel_w: d.panel_w, subsidy: d.subsidy, state_subsidy: d.state_subsidy,
+          net_meter_pct: Math.round(d.net_meter_cap * 100), tanker_price: d.tanker_price,
+          design_rain_mm: d.design_rain_mm, rwh_l_per_m2: d.rwh_l_per_m2, chhata: d.chhata,
+          rrhs_cost_per_m2: d.rrhs_cost_per_m2,
         }
         const q = new URLSearchParams(location.search)
         const num = (k: string) => {
@@ -179,14 +209,21 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
             monthly_units: num("u") ?? base.monthly_units,
             family_size: num("f") ?? base.family_size,
             roof_type: q.get("rt") && c.roof_types[q.get("rt")!] ? q.get("rt")! : base.roof_type,
+            floors: num("fl") ?? base.floors,
             usable_pct: num("uf") ?? base.usable_pct,
-            tariff: num("t") ?? base.tariff,
+            tariff: q.has("t") ? num("t") : base.tariff,
+            sanctioned_load_kw: num("sl") ?? base.sanctioned_load_kw,
             cost_per_kw: num("c") ?? base.cost_per_kw,
             panel_w: num("pw") ?? base.panel_w,
             subsidy: q.get("s") !== "0",
+            state_subsidy: q.get("ss") !== "0",
             export_rate: num("ex"),
+            net_meter_pct: num("nc") ?? base.net_meter_pct,
             tanker_price: num("tp") ?? base.tanker_price,
             design_rain_mm: num("dr") ?? base.design_rain_mm,
+            rwh_l_per_m2: num("rl") ?? base.rwh_l_per_m2,
+            chhata: q.get("ch") !== "0",
+            rrhs_cost_per_m2: num("rc") ?? base.rrhs_cost_per_m2,
             rain_override_mm: num("rn"),
             panels: num("n"),
           }
@@ -199,10 +236,14 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
           setTabState(window.matchMedia("(min-width: 1024px)").matches ? "solar" : "solar")
         } else {
           setInputs(base)
-          if (q.get("demo") === "1") {
-            addressAuto.current = false
-            setAddressState(DEMO_ROOF.name)
-            setRoof(DEMO_ROOF.poly, "ai", 1.0, { fit: true })
+          const demoId = q.get("demo")
+          if (demoId) {
+            const d = DEMO_ROOFS.find((r) => r.id === demoId) ?? (demoId === "1" ? DEMO_ROOF : null)
+            if (d) {
+              addressAuto.current = false
+              setAddressState(d.name)
+              setRoof(d.poly, "ai", 1.0, { fit: true })
+            }
           }
         }
       })
@@ -222,15 +263,22 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
           polygon: roof.latlngs,
           monthly_units: clamp(inputs.monthly_units, 0, 100000),
           family_size: clamp(Math.round(inputs.family_size), 1, 100),
+          floors: clamp(Math.round(inputs.floors), 1, 30),
           roof_type: inputs.roof_type,
           usable_fraction: clamp(inputs.usable_pct, 5, 100) / 100,
-          tariff: clamp(inputs.tariff, 0, 50),
+          tariff: inputs.tariff === null ? null : clamp(inputs.tariff, 0, 50),
+          sanctioned_load_kw: clamp(inputs.sanctioned_load_kw, 0, 500),
           cost_per_kw: clamp(inputs.cost_per_kw, 10000, 300000),
           panel_w: clamp(Math.round(inputs.panel_w), 100, 800),
           subsidy: inputs.subsidy,
+          state_subsidy: inputs.state_subsidy,
           export_rate: inputs.export_rate === null ? null : clamp(inputs.export_rate, 0, 20),
+          net_meter_cap: clamp(inputs.net_meter_pct, 0, 100) / 100,
           tanker_price: clamp(inputs.tanker_price, 0, 20000),
           design_rain_mm: clamp(inputs.design_rain_mm, 5, 300),
+          rwh_l_per_m2: clamp(inputs.rwh_l_per_m2, 0, 1000),
+          chhata: inputs.chhata,
+          rrhs_cost_per_m2: clamp(inputs.rrhs_cost_per_m2, 0, 100000),
           rain_override_mm: inputs.rain_override_mm !== null && inputs.rain_override_mm >= 50
             ? Math.min(inputs.rain_override_mm, 12000) : null,
           panels: inputs.panels === null ? null : clamp(Math.round(inputs.panels), 0, 400),

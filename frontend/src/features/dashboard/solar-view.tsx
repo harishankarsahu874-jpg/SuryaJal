@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react"
 import {
-  ArrowRight, Download, Grid2x2, Hourglass, Landmark, Leaf, MapPin, Minus, PenLine, Plus, Receipt, RotateCcw,
-  Satellite, SolarPanel, Sun, TrendingUp, Zap,
+  AlertTriangle, ArrowRight, Building2, Download, Grid2x2, Hourglass, Landmark, Leaf, MapPin, Minus,
+  PenLine, Percent, Plus, Receipt, RotateCcw, Satellite, SolarPanel, Sun, TrendingUp, Zap,
 } from "lucide-react"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Slider } from "@/components/ui/slider"
@@ -11,7 +11,7 @@ import { useDashboard } from "./state"
 import { CountUp, EmptyState, MonthBars, Pill, SavingsTimeline, SectionCard, StatTile } from "./ui-bits"
 
 export function SolarView() {
-  const { result: r, roof, address, inputs, setInput, setTab, query, loadDemo, assessing } = useDashboard()
+  const { result: r, roof, address, inputs, setInput, setTab, query, loadDemo, assessing, config } = useDashboard()
   const [month, setMonth] = useState<number | null>(null)
   const [thumbQ, setThumbQ] = useState("")
   const [thumbLoaded, setThumbLoaded] = useState(false)
@@ -43,7 +43,15 @@ export function SolarView() {
   const sunHours = r.climate.ghi_avg
   const lat = r.centroid[0]
   const tilt = Math.round(Math.abs(lat))
-  const allIn = inputs.tariff * 1.28
+  // all-in ₹/unit you actually pay: OERC slabs + ₹20/kW fixed charge + 4 % duty
+  // (or your own flat rate, if you typed one in Report → Assumptions)
+  const allIn = s.tariff > 0 ? s.tariff : 5.05
+  const discom = r.location?.discom ?? "your Odisha DISCOM"
+  const tcfg = config?.odisha?.tariff
+  const fy = tcfg?.tariff_fy ?? "FY 2026-27"
+  const fixedPerKw = tcfg?.fixed_charge_per_kw ?? 20
+  const dutyPct = tcfg?.duty_pct ?? 4
+  const SLABS = tcfg?.tariff_slabs?.length ? tcfg.tariff_slabs : FALLBACK_SLABS
   const maxPanels = Math.max(0, s.roof_max_panels)
   const offline = !!r.climate.offline
 
@@ -70,6 +78,11 @@ export function SolarView() {
             <p className="mt-2 text-[13px] leading-relaxed text-foreground/75">
               Usable roof area: {fmtIN(sqft(s.usable_area_m2))} sq.ft • {sunHours.toFixed(1)} peak sun-hours/day
             </p>
+            {r.location?.district && (
+              <p className="mt-1 text-[12px] text-foreground/60">
+                {r.location.district} district · served by {r.location.discom_name ?? r.location.discom}
+              </p>
+            )}
           </div>
           <span className="grid size-11 shrink-0 place-items-center rounded-full bg-sun-soft text-sun-ink">
             <Sun className="size-5" />
@@ -171,24 +184,57 @@ export function SolarView() {
         </div>
         <p className="mt-3 rounded-lg bg-sage-50 px-3 py-2 text-xs leading-relaxed text-foreground/75">
           In {MONTHS_LONG[sel]} you use ~{fmtIN(use)} kWh:{" "}
-          {gen >= use ? <>solar covers it all and sends <b>{fmtIN(gen - use)} kWh</b> to BESCOM at ₹{s.export_rate.toFixed(2)}/unit.</>
-            : <>solar covers <b>{Math.round((gen / Math.max(1, use)) * 100)}%</b>; the grid tops up {fmtIN(use - gen)} kWh.</>}
+          {gen >= use
+            ? <>solar covers it all and <b>{fmtIN(gen - use)} kWh</b> goes to the {discom} grid as a credit that carries
+                forward inside the financial year.</>
+            : <>solar covers <b>{Math.round((gen / Math.max(1, use)) * 100)}%</b>; {discom} supplies the remaining
+                {fmtIN(use - gen)} kWh.</>}
         </p>
       </SectionCard>
 
       {/* finance */}
       {s.panels > 0 && (
-        <SectionCard title="Financial Modeling" subtitle="Grid-tied net-metering estimate (KERC 2026)"
+        <SectionCard title="Financial Modeling" subtitle={`OERC net metering · ${fy} · PM Surya Ghar + Odisha SFA`}
           right={s.irr != null ? <Pill tone="peach"><TrendingUp className="size-3.5" /> {(s.irr * 100).toFixed(1)}% IRR</Pill> : undefined}>
           <div className="space-y-3">
-            <Row icon={Receipt} label="Estimated Capital Cost" value={rupees(s.gross_cost)} />
-            <Row icon={Landmark} label="Govt Subsidy (PM Surya Ghar)"
-              sub={s.subsidy ? "Paid by DBT to your bank after installation" : "Not applied (switch it on in Report → Assumptions)"}
-              value={s.subsidy ? `−${rupees(s.subsidy)}` : "₹0"} valueClass="text-sage-700" />
+            <Row icon={Receipt} label="Estimated Capital Cost" value={rupees(s.gross_cost)}
+              sub={`${s.kw.toFixed(2)} kW × ${fmtIN(p.cost_per_kw)} per kW (OREDA-empanelled vendor)`} />
+            <Row icon={Landmark} label="PM Surya Ghar subsidy (central)"
+              sub={s.subsidy_central
+                ? "₹30,000/kW up to 2 kW + ₹18,000 for the 3rd kW · paid by DBT after installation"
+                : "Not applied (switch it on in Report → Assumptions)"}
+              value={s.subsidy_central ? `−${rupees(s.subsidy_central)}` : "₹0"} valueClass="text-sage-700" />
+            <Row icon={Building2} label="Odisha SFA (state top-up)"
+              sub={s.subsidy_state
+                ? "₹25,000/kW up to 2 kW + ₹10,000 for the 3rd kW · State Cabinet, Jan 2025"
+                : "Switched off in Assumptions"}
+              value={s.subsidy_state ? `−${rupees(s.subsidy_state)}` : "₹0"} valueClass="text-sage-700" />
             <div className="flex items-center justify-between rounded-xl bg-muted px-3.5 py-3">
               <span className="text-sm font-semibold">Net Out-of-Pocket</span>
               <span className="font-heading text-[1.7rem] leading-none font-medium tabular"><CountUp value={s.net_cost} format={rupees} /></span>
             </div>
+
+            {/* the bill itself, before and after - this is where the savings come from */}
+            <div className="rounded-xl border border-sage-200 bg-sage-50/70 p-3.5">
+              <div className="mb-2 flex items-center gap-1.5 text-[11px] font-semibold tracking-wider text-sage-800/80 uppercase">
+                <Percent className="size-3.5" /> Your {discom} bill
+              </div>
+              <BillLine label="Today, without solar" value={rupees(s.bill_before)}
+                sub={`${fmtIN(s.annual_units)} units/yr at ~₹${s.tariff.toFixed(2)}/unit all-in`} />
+              <BillLine label="With solar (import only)" value={rupees(s.bill_after)} highlight
+                sub={`${fmtIN(s.annual_units_after)} units bought · fixed charge and duty still apply`} />
+              <BillLine label="Export settled every March" value={rupees(s.export_income)}
+                sub={s.export_paid > 0
+                  ? `${fmtIN(s.export_paid)} units at ₹${s.export_rate.toFixed(2)}/unit feed-in tariff`
+                  : "Nothing left to settle — the plant is sized to your own use"} />
+              <div className="mt-2 flex items-baseline justify-between border-t border-sage-200 pt-2">
+                <span className="text-sm font-semibold">Saving per year</span>
+                <span className="font-heading text-xl font-medium text-sage-800 tabular">
+                  <CountUp value={s.annual_savings} format={rupees} /> <span className="font-sans text-xs text-muted-foreground">/ yr</span>
+                </span>
+              </div>
+            </div>
+
             <div className="flex items-center justify-between gap-3 rounded-xl bg-sage-200/80 p-3.5">
               <div className="flex items-center gap-3">
                 <span className="grid size-11 place-items-center rounded-xl bg-card text-sage-800 shadow-sm"><Hourglass className="size-5" /></span>
@@ -204,13 +250,62 @@ export function SolarView() {
                 <div className="font-heading text-lg font-medium text-sage-900 tabular">{rupees(s.annual_savings)} <span className="text-xs font-sans">/ yr</span></div>
               </div>
             </div>
+
+            {!s.net_metering.ok && (
+              <p className="flex items-start gap-2 rounded-lg bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-900">
+                <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+                OERC allows net metering only up to your sanctioned load. A {s.kw.toFixed(2)} kW plant needs a sanctioned
+                load of at least {s.kw.toFixed(1)} kW; yours is {s.net_metering.limit_kw.toFixed(1)} kW. Ask {discom} for a
+                load enhancement along with the net-meter application.
+              </p>
+            )}
+            {s.export_lapsed > 1 && (
+              <p className="rounded-lg bg-muted px-3 py-2 text-xs leading-relaxed text-muted-foreground">
+                About {fmtIN(s.export_lapsed)} units of export would lapse on 31 March: OERC credits solar generation only
+                up to {Math.round(s.net_meter_cap * 100)}% of your yearly consumption ({fmtIN(s.credit_limit_units)} units).
+                A slightly smaller plant would earn the same money.
+              </p>
+            )}
+
             <div className="rounded-xl border border-dashed border-sage-300 p-3.5">
-              <div className="mb-1 text-xs font-semibold text-muted-foreground">25-year savings · drag across the chart</div>
+              <div className="mb-1 text-xs font-semibold text-muted-foreground">{s.lifetime_years}-year savings · drag across the chart</div>
               <SavingsTimeline yearly={s.yearly_savings} netCost={s.net_cost} format={rupees} />
             </div>
           </div>
         </SectionCard>
       )}
+
+      {/* OERC tariff + net-metering rules */}
+      <SectionCard title="Your tariff, by law" subtitle={`OERC domestic slab tariff · ${fy} · the same in all four Odisha DISCOMs`}>
+        <div className="space-y-2">
+          {SLABS.map((sl) => {
+            const active = inputs.monthly_units > sl.from && (sl.to === null || inputs.monthly_units <= sl.to)
+            return (
+              <div key={sl.label}
+                className={cn("flex items-center justify-between rounded-lg px-3 py-2 text-sm",
+                  active ? "bg-sun-soft font-semibold text-sun-ink" : "bg-muted/60")}>
+                <span className="inline-flex items-center gap-2">
+                  <span className="tabular">{sl.label}</span>
+                  {active && <span className="rounded-full bg-white/70 px-1.5 py-0.5 text-[10px] tracking-wide uppercase">you</span>}
+                </span>
+                <span className="tabular">₹{sl.rate.toFixed(2)} / unit</span>
+              </div>
+            )
+          })}
+          <div className="flex flex-wrap gap-1.5 pt-1">
+            <Pill tone="plain">₹{fmtIN(fixedPerKw)}/kW/month fixed</Pill>
+            <Pill tone="plain">{dutyPct}% electricity duty</Pill>
+            <Pill tone="plain">Export ₹{s.export_rate.toFixed(2)}/unit</Pill>
+            <Pill tone="plain">{Math.round(s.net_meter_cap * 100)}% credit cap</Pill>
+          </div>
+          <p className="text-xs leading-relaxed text-muted-foreground">
+            Odisha bills are telescopic, so every solar unit you generate replaces your <b className="text-foreground">dearest</b>{" "}
+            unit — today that is ₹{s.tariff_marginal.toFixed(2)}/unit. Surplus carries forward month to month and whatever is
+            left on 31 March is settled at the feed-in tariff{s.export_rate_auto ? " (GRIDCO's average power purchase cost)" : " you set"}.
+            {inputs.tariff != null && <> You overrode the slabs with your own flat rate of ₹{inputs.tariff.toFixed(2)}/unit.</>}
+          </p>
+        </div>
+      </SectionCard>
 
       {/* satellite layout simulation */}
       <SectionCard
@@ -260,6 +355,25 @@ function Row({ icon: Icon, label, sub, value, valueClass }: {
         </div>
       </div>
       <span className={cn("font-heading text-lg font-medium whitespace-nowrap tabular", valueClass)}>{value}</span>
+    </div>
+  )
+}
+
+const FALLBACK_SLABS = [
+  { from: 0, to: 50, label: "0 – 50 units", rate: 2.9 },
+  { from: 51, to: 200, label: "51 – 200 units", rate: 4.7 },
+  { from: 201, to: 400, label: "201 – 400 units", rate: 5.7 },
+  { from: 401, to: null as number | null, label: "above 400 units", rate: 6.1 },
+]
+
+function BillLine({ label, value, sub, highlight }: { label: string; value: string; sub?: string; highlight?: boolean }) {
+  return (
+    <div className={cn("flex items-start justify-between gap-3 py-1", highlight && "text-sage-900")}>
+      <div className="min-w-0">
+        <div className={cn("text-[13px] leading-snug", highlight ? "font-semibold" : "text-foreground/80")}>{label}</div>
+        {sub && <div className="text-[11px] text-muted-foreground">{sub}</div>}
+      </div>
+      <span className="font-heading text-[15px] font-medium whitespace-nowrap tabular">{value}</span>
     </div>
   )
 }
