@@ -430,7 +430,7 @@ export function MapPanel({ visible }: { visible: boolean }) {
       </AnimatePresence>
 
       {/* search + hint */}
-      <div className="absolute inset-x-3 top-3 z-[500] flex flex-col items-start gap-2 sm:left-4 sm:right-auto sm:w-[400px]">
+      <div className="absolute inset-x-3 top-3 z-[500] flex flex-col items-start gap-2 sm:left-4 sm:right-auto sm:w-[min(400px,calc(100%-2rem))]">
         <SearchBox onPick={(g) => {
             mapRef.current?.flyTo([g.lat, g.lon], zoomFor(g.type), { duration: 1.2 })
             setHint(g.discom
@@ -456,9 +456,10 @@ export function MapPanel({ visible }: { visible: boolean }) {
         </div>
       </div>
 
-      {/* engine badge */}
+      {/* engine badge (mobile/tablet only — on desktop the map is narrower, so the
+          engine status lives in the dashboard header instead) */}
       {ctx.config && (
-        <div className="absolute top-3 right-3 z-[500] hidden items-center gap-1.5 rounded-full bg-white/90 px-2.5 py-1.5 text-[11px] font-semibold text-sage-800 shadow sm:inline-flex">
+        <div className="absolute top-3 right-3 z-[500] hidden items-center gap-1.5 rounded-full bg-white/90 px-2.5 py-1.5 text-[11px] font-semibold text-sage-800 shadow sm:inline-flex lg:hidden">
           <span className={cn("size-2 rounded-full", ctx.config.engine === "mobilesam" ? "bg-emerald-500" : "bg-amber-500")} />
           {ctx.config.engine === "mobilesam" ? "MobileSAM ready" : "OpenCV mode"}
         </div>

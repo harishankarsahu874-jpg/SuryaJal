@@ -594,12 +594,12 @@
     return q;
   }
   let lastQr = '';
+  let lastReportQ = '';
   function updateLinks() {
     if (!S.roof || !S.config) return;
     const q = stateParams().toString();
     const origin = location.origin;
-    $('#dlBtn').href = `/r?${q}&dl=1`;
-    $('#openBtn').href = `/r?${q}`;
+    lastReportQ = q;
     $('#shareUrl').value = `${origin}/app?${q}`;
     const reportAbs = `${origin}/r?${q}`;
     if (reportAbs !== lastQr) {
@@ -610,14 +610,39 @@
   }
   const updateLinksSoon = debounce(updateLinks, 400);
 
-  $('#copyBtn').addEventListener('click', async () => {
-    const inp = $('#shareUrl');
-    try { await navigator.clipboard.writeText(inp.value); toast('Link copied ✓', 'ok'); } catch (e) {
-      inp.focus(); inp.select(); toast('Press Ctrl+C to copy the selected link');
+  // Robust PDF download: fetch a blob and hand it to the browser. Plain <a href> links
+  // to an "attachment" response are blocked inside embedded preview iframes, which made
+  // the button silently do nothing there.
+  async function downloadReport() {
+    if (!lastReportQ) return;
+    const btn = $('#dlBtn');
+    const old = btn.textContent;
+    btn.textContent = '⏳ Building…';
+    btn.style.pointerEvents = 'none';
+    try {
+      const res = await fetch(`/r?${lastReportQ}&dl=1`);
+      if (!res.ok) {
+        let msg = `HTTP ${res.status}`;
+        try { const j = await res.json(); if (j && j.detail) msg = String(j.detail); } catch (e) { /* not json */ }
+        throw new Error(msg);
+      }
+      const blob = await res.blob();
+      const m = /filename\*?=(?:UTF-8'')?"?([^";]+)"?/i.exec(res.headers.get('content-disposition') || '');
+      const name = m ? decodeURIComponent(m[1].trim()) : 'SuryaJal_Green_Roof_Report.pdf';
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = name;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+      toast('Report downloaded ✓ (check Downloads)', 'ok');
+    } catch (e) {
+      toast('Download failed (' + e.message + ') — use “Open” instead', 'warn', 9000);
+    } finally {
+      btn.textContent = old;
+      btn.style.pointerEvents = '';
     }
-  });
-  const refreshStatsSoon = () => setTimeout(loadStats, 2500);
-  $('#dlBtn').addEventListener('click', refreshStatsSoon);
+  }
+  $('#dlBtn').addEventListener('click', (e) => { e.preventDefault(); downloadReport(); refreshStatsSoon(); });
   $('#openBtn').addEventListener('click', refreshStatsSoon);
 
   // ------------------------------------------------------------------ search / locate

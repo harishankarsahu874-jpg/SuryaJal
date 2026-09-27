@@ -8,6 +8,14 @@ metering with TPCODL / TPNODL / TPWODL / TPSODL, the PM Surya Ghar central subsi
 Financial Assistance**, the Odisha Development Authorities rainwater rule (6 m³ of recharge per 100 m² of roof) and
 the State's **CHHATA** rooftop‑rainwater subsidy. Climate data is bundled for all **30 districts**.
 
+> **v2.0.1 — usability fixes:** the **Download** buttons now work everywhere (they fetch the PDF as a blob instead of a
+> navigation, so embedded preview frames / strict browsers that block `Content-Disposition` downloads can't silently kill
+> the click; a spinner, success/error toasts and an "Open instead" fallback are included), the **QR code** now points at
+> the PC's Wi-Fi/LAN address when you run SuryaJal on `localhost` (a new `/api/net` endpoint — before, the QR said
+> `localhost` and no phone could ever open it) with a tap-to-retry tile if it fails to load, and on desktop the **map is
+> capped at ~40 % of the screen** (360-560 px) so the report and the numbers get the remaining ~60 % — phones/tablets keep
+> the full-screen map tab, ready for the mobile app.
+>
 > **v2.0 (Sep 2026) — the Odisha rebuild:** OERC telescopic slab tariff (₹2.90 / 4.70 / 5.70 / 6.10 per unit) with the
 > ₹20/kW fixed charge and 4 % electricity duty, bills computed *before* and *after* solar instead of a flat rate, the
 > OERC 90 %-of-consumption net‑metering cap and March settlement at the GRIDCO APPC feed‑in tariff, Odisha SFA on top of
