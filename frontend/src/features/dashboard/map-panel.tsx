@@ -25,6 +25,8 @@ function zoomFor(type: string) {
   if (["road", "street", "tertiary", "secondary", "primary", "service", "living_street"].includes(type)) return 18
   if (["neighbourhood", "suburb", "quarter", "hamlet"].includes(type)) return 16
   if (["city", "town", "administrative", "county", "state_district"].includes(type)) return 13
+  if (type === "postcode") return 15
+  if (type === "postcode_area") return 12
   return 17
 }
 
@@ -459,7 +461,7 @@ export function MapPanel({ visible }: { visible: boolean }) {
       {/* engine badge (mobile/tablet only — on desktop the map is narrower, so the
           engine status lives in the dashboard header instead) */}
       {ctx.config && (
-        <div className="absolute top-3 right-3 z-[500] hidden items-center gap-1.5 rounded-full bg-white/90 px-2.5 py-1.5 text-[11px] font-semibold text-sage-800 shadow sm:inline-flex lg:hidden">
+        <div className="absolute top-3 right-3 z-[500] hidden items-center gap-1.5 rounded-full bg-white/90 px-2.5 py-1.5 text-[11px] font-semibold text-sage-800 shadow sm:inline-flex">
           <span className={cn("size-2 rounded-full", ctx.config.engine === "mobilesam" ? "bg-emerald-500" : "bg-amber-500")} />
           {ctx.config.engine === "mobilesam" ? "MobileSAM ready" : "OpenCV mode"}
         </div>
@@ -494,7 +496,7 @@ export function MapPanel({ visible }: { visible: boolean }) {
         <AnimatePresence>
           {roof && (
             <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 20 }}
-              className="w-full max-w-md rounded-2xl border bg-card p-3.5 shadow-2xl lg:hidden">
+              className="w-full max-w-md rounded-2xl border bg-card p-3.5 shadow-2xl">
               <div className="flex items-center gap-3">
                 <div className="min-w-0 flex-1">
                   <div className="text-[11px] font-semibold tracking-wider text-muted-foreground uppercase">Your roof</div>

@@ -9,6 +9,7 @@ import hashlib
 import io
 import json
 import math
+import re
 import socket
 import time
 from contextlib import asynccontextmanager
@@ -37,6 +38,7 @@ from .geo import (decode_polyline, encode_polyline, latlon_to_px, polygon_area_m
                   polygon_centroid, polygon_perimeter_m, px_to_latlon)
 from .layout import auto_layout
 from .rain import RULE_NAME, RULE_SHORT, assess_rain, green_score
+from . import pincode
 from .report import build_report_pdf, qr_svg, roof_thumbnail
 from .segment import RoofSegmenter, mask_to_polygon
 from .solar import assess_solar, odisha_state_subsidy, pm_surya_ghar_subsidy
@@ -315,28 +317,47 @@ async def _nominatim(path: str, params: dict):
     return data
 
 
+def _geo_row(name: str, lat: float, lon: float, typ: str = "") -> dict:
+    return {"name": name, "lat": lat, "lon": lon, "type": typ,
+            **{k: v for k, v in odisha.locate(lat, lon).items() if k in ("district", "discom")}}
+
+
 @app.get("/api/geocode")
 async def geocode(q: str = Query(..., min_length=2, max_length=200)):
     # SuryaJal serves Odisha: bias (and limit) place search to the State.
+    q = q.strip()
+    pin = pincode.find_pin(q)
+    only_pin = pin is not None and re.fullmatch(r"[\d\s]+", q) is not None
+    data: list = []
+    online = True
     try:
-        data = await _nominatim("/search", {"q": q, "limit": 6, "addressdetails": 0,
-                                            "countrycodes": "in",
-                                            "viewbox": NOMINATIM_VIEWBOX, "bounded": 0})
-    except httpx.HTTPError:
-        raise HTTPException(503, "Place search needs internet - you can still pan the map.")
+        if pin:   # Nominatim free-text search is poor at Indian PINs - use the structured form first
+            data = await _nominatim("/search", {"postalcode": pin, "country": "India", "limit": 6,
+                                                "addressdetails": 0})
+        if not data and not only_pin:
+            data = await _nominatim("/search", {"q": q, "limit": 6, "addressdetails": 0,
+                                                "countrycodes": "in",
+                                                "viewbox": NOMINATIM_VIEWBOX, "bounded": 0})
+    except (httpx.HTTPError, HTTPException):
+        online = False
     out = []
     for d in data:
         name = d.get("display_name", "")
+        lat, lon = float(d["lat"]), float(d["lon"])
         if ", India" in name and not any(t in name for t in (", Odisha", "Odisha,")):
             continue                       # outside the State: skip it
-        out.append({"name": name, "lat": float(d["lat"]), "lon": float(d["lon"]),
-                    "type": d.get("type", ""),
-                    **{k: v for k, v in odisha.locate(float(d["lat"]), float(d["lon"])).items()
-                       if k in ("district", "discom")}})
+        out.append(_geo_row(name, lat, lon, d.get("type", "")))
+    if pin and not out:                    # offline / not in OSM: built-in Odisha PIN table
+        hit = pincode.lookup(pin)
+        if hit:
+            out = [_geo_row(hit["name"], hit["lat"], hit["lon"],
+                             "postcode" if hit["exact"] else "postcode_area")]
     if not out and data:                   # nothing in Odisha matched - show what we found
         out = [{"name": d.get("display_name", ""), "lat": float(d["lat"]),
                 "lon": float(d["lon"]), "type": d.get("type", ""),
                 "district": None, "discom": None} for d in data[:3]]
+    if not out and not online:
+        raise HTTPException(503, "Place search needs internet - you can still pan the map or enter an Odisha PIN code.")
     return out
 
 
@@ -454,7 +475,7 @@ async def report(request: Request):
         crop = await state["tiles"].crop_bbox(a["polygon"])
     except Exception:
         crop = None
-    thumb = await run_in_threadpool(roof_thumbnail, crop, a["polygon"], a["layout"]["panels"])
+    thumb = await run_in_threadpool(roof_thumbnail, crop, a["polygon"], a["layout"]["panels"], 900)
     share_q = {k: v for k, v in q.items() if k not in ("dl",)}
     share_url = f"{_public_base(request)}/app?{httpx.QueryParams(share_q)}"
     if meta["method"] == "ai":

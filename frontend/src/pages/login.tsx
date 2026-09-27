@@ -225,7 +225,7 @@ function SignedInCard({ name, email, next, onSignOut }: { name: string; email: s
 function BrandPanel() {
   const perks = [
     { icon: BookmarkCheck, t: "Keep every Green Roof Report", d: "Your roofs, savings and rain plans in one place." },
-    { icon: GitCompareArrows, t: "Compare family homes", d: "See which roof gives the best payback." },
+    { icon: GitCompareArrows, t: "Compare your buildings", d: "See which roof gives the best payback." },
     { icon: RefreshCw, t: "Reopen and tweak any time", d: "Change your bill or panels — numbers update live." },
   ]
   return (

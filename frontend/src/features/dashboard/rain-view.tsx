@@ -48,7 +48,7 @@ export function RainView() {
           </div>
           <p className="mt-2 max-w-[34ch] text-[13px] leading-relaxed text-foreground/75">
             {fmtIN(r.area_m2)} m² × {fmtIN(w.annual_rain_mm)} mm × runoff {w.runoff_c} —{" "}
-            {coverage >= 100 ? <>enough for <b>all</b> of your family’s water.</> : <>about <b>{coverage}%</b> of your family’s yearly water.</>}
+            {coverage >= 100 ? <>enough for <b>all</b> of the building’s water.</> : <>about <b>{coverage}%</b> of the building’s yearly water.</>}
           </p>
         </div>
       </section>
@@ -62,7 +62,7 @@ export function RainView() {
         <StatTile label="Tankers Avoided" icon={Truck} tone="water" value={<CountUp value={w.tankers_saved} format={(v) => fmtIN(v)} />}
           unit="/ yr" sub={`${rupees(w.tanker_savings)} saved at ${rupees(p.tanker_price)} each`} />
         <StatTile label="Water For" icon={CalendarDays} tone="water" value={<CountUp value={w.days_of_water} format={(v) => fmtIN(v)} />}
-          unit="days" sub={`Family of ${p.family_size} @ ${p.lpcd} L/day`} />
+          unit="days" sub={`${p.family_size} people @ ${p.lpcd} L/day`} />
       </div>
 
       <SectionCard title="Monthly Harvest" subtitle="Tap a month to fill your tank" right={<Pill tone="water">Jan – Dec</Pill>}>
@@ -81,13 +81,13 @@ export function RainView() {
           label={(i) => `${MONTHS_LONG[i]}: ${fmtIN(w.monthly_harvest_l[i])} litres`} />
         <div className="mt-3.5 flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
           <span className="inline-flex items-center gap-1.5"><span className="size-2.5 rounded-sm bg-sky-200" /> Rain harvested</span>
-          <span className="inline-flex items-center gap-1.5"><span className="h-0 w-4 border-t-2 border-dashed border-sage-900/55" /> Family use</span>
+          <span className="inline-flex items-center gap-1.5"><span className="h-0 w-4 border-t-2 border-dashed border-sage-900/55" /> Water use</span>
           <span className="inline-flex items-center gap-1.5"><span className="size-2.5 rounded-sm bg-water-ink" /> Selected Month</span>
         </div>
         <div className="mt-4 rounded-xl border border-sky-100 bg-sky-50/60 p-3.5">
           <TankGauge fraction={Math.min(1, fills)}
             label={fills >= 1 ? `Fills your ${fmtIN(w.tank.litres)} L tank ${fills.toFixed(1)}×` : `${Math.round(fills * 100)}% of your ${fmtIN(w.tank.litres)} L tank`}
-            sub={`${fmtIN(rainMm)} mm of rain in ${MONTHS_LONG[sel]} · your family uses ~${fmtIN(demand)} L`} />
+            sub={`${fmtIN(rainMm)} mm of rain in ${MONTHS_LONG[sel]} · the building uses ~${fmtIN(demand)} L`} />
         </div>
       </SectionCard>
 
@@ -172,7 +172,7 @@ export function RainView() {
             </div>
           </div>
           <div>
-            <span className="mb-1.5 block text-xs font-semibold text-muted-foreground">People in family</span>
+            <span className="mb-1.5 block text-xs font-semibold text-muted-foreground">People using the building</span>
             <div className="flex h-11 items-center justify-between rounded-xl border bg-background px-1.5">
               <Step onClick={() => setInput("family_size", Math.max(1, inputs.family_size - 1))} label="Fewer people"><Minus /></Step>
               <span className="inline-flex items-center gap-1.5 font-semibold tabular"><Users className="size-4 text-muted-foreground" /> {inputs.family_size}</span>

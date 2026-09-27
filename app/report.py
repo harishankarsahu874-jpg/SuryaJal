@@ -1,4 +1,4 @@
-"""One-page A4 "Green Roof Report" (reportlab): roof thumbnail with outline + auto
+"""Three-page A4 "Green Roof Report" (reportlab): roof thumbnail with outline + auto
 panel layout, solar & rainwater KPIs, monthly charts, Green Score, QR code."""
 from __future__ import annotations
 
@@ -396,22 +396,11 @@ def qr_svg(data: str, size: float = 180) -> str:
 
 
 # ------------------------------------------------------------------ main builder
-def build_report_pdf(a: Dict, thumb: Optional[Image.Image], share_url: str,
-                     address: str = "", method_label: str = "") -> bytes:
-    _register_fonts()
-    buf = io.BytesIO()
-    W, H = A4
-    M = 28
-    c = canvas.Canvas(buf, pagesize=A4)
-    c.setTitle("SuryaJal - Green Roof Report")
-    c.setAuthor("SuryaJal")
-    c.setSubject("Rooftop solar and rainwater harvesting potential in Odisha")
-    s, r, g, p = a["solar"], a["rain"], a["score"], a["params"]
-    loc = a.get("location") or {}
-    place = " · ".join(x for x in (loc.get("district") and f"{loc['district']} district",
-                                   loc.get("discom")) if x)
-
-    # ---------------- header band
+# Three A4 pages so nothing gets squeezed or overlaps:
+#   1. the roof map (big satellite view) + roof facts + Green Score
+#   2. the Rooftop Solar report
+#   3. the Rainwater Harvesting report + QR code
+def _header(c, W, H, M, a, subtitle: str, page: int, pages: int):
     c.setFillColor(NAVY)
     c.rect(0, H - 74, W, 74, stroke=0, fill=1)
     _logo_mark(c, M, H - 62, 44)
@@ -420,8 +409,7 @@ def build_report_pdf(a: Dict, thumb: Optional[Image.Image], share_url: str,
     c.drawString(M + 52, H - 38, "Green Roof Report")
     c.setFont(F, 8.5)
     c.setFillColor(SUB)
-    c.drawString(M + 52, H - 53,
-                 "SuryaJal · AI rooftop solar + rainwater assessment for Odisha")
+    c.drawString(M + 52, H - 53, subtitle)
     c.setFont(FB, 8.5)
     c.setFillColor(white)
     c.drawRightString(W - M, H - 34, f"Report #{a['report_id']}")
@@ -429,174 +417,224 @@ def build_report_pdf(a: Dict, thumb: Optional[Image.Image], share_url: str,
     c.setFillColor(SUB)
     c.drawRightString(W - M, H - 47, dt.date.today().strftime("%d %b %Y"))
     c.drawRightString(W - M, H - 58, a["climate"].get("short_source", "NASA POWER data"))
+    # footer line + page number
+    c.setStrokeColor(LIGHT)
+    c.setLineWidth(0.6)
+    c.line(M, 30, W - M, 30)
+    c.setFont(F, 7)
+    c.setFillColor(GRAY)
+    c.drawString(M, 19, "SuryaJal · screening estimate, not an engineering design")
+    c.drawRightString(W - M, 19, f"Page {page} of {pages}")
 
-    # ---------------- roof row
-    top = H - 88
-    box = 168
+
+def _notes(c, x, y, w, notes, min_y=40):
+    """Wrapped paragraphs; returns the y below the last line (never draws under min_y)."""
+    for text, bold in notes:
+        font, size, lead = (FB, 9, 12) if bold else (F, 7.8, 10.5)
+        c.setFont(font, size)
+        c.setFillColor(INK if bold else GRAY)
+        for ln in simpleSplit(text, font, size, w):
+            if y < min_y:
+                return y
+            c.drawString(x, y, ln)
+            y -= lead
+        y -= 4
+    return y
+
+
+def _tiles(c, M, W, y_top, tiles, accent, cols=3, h=46, gap=8):
+    tw = (W - 2 * M - gap * (cols - 1)) / cols
+    rows = (len(tiles) + cols - 1) // cols
+    for i, (lb, val, sub) in enumerate(tiles):
+        col, row = i % cols, i // cols
+        _tile(c, M + col * (tw + gap), y_top - h - row * (h + gap), tw, h, lb, val, sub, accent)
+    return y_top - rows * (h + gap)
+
+
+def build_report_pdf(a: Dict, thumb: Optional[Image.Image], share_url: str,
+                     address: str = "", method_label: str = "") -> bytes:
+    _register_fonts()
+    buf = io.BytesIO()
+    W, H = A4
+    M = 32
+    c = canvas.Canvas(buf, pagesize=A4)
+    c.setTitle("SuryaJal - Green Roof Report")
+    c.setAuthor("SuryaJal")
+    c.setSubject("Rooftop solar and rainwater harvesting potential in Odisha")
+    s, r, g, p = a["solar"], a["rain"], a["score"], a["params"]
+    loc = a.get("location") or {}
+    district = loc.get("district") or "Odisha"
+    place = " · ".join(x for x in (loc.get("district") and f"{loc['district']} district",
+                                   loc.get("discom")) if x)
+    PAGES = 3
+
+    # =============================== PAGE 1 - roof map
+    _header(c, W, H, M, a, "Page 1 · Your roof on the map", 1, PAGES)
+    y = H - 100
+    c.setFont(FB, 7.5)
+    c.setFillColor(AMBER_D)
+    c.drawString(M, y, "YOUR ROOF")
+    c.setFont(FB, 13)
+    c.setFillColor(INK)
+    yy = y - 17
+    for ln in simpleSplit(address or "Selected rooftop", FB, 13, W - 2 * M)[:2]:
+        c.drawString(M, yy, ln)
+        yy -= 16
+    lat, lon = a["centroid"]
+    c.setFont(F, 8)
+    c.setFillColor(GRAY)
+    c.drawString(M, yy, f"{abs(lat):.5f}° {'N' if lat >= 0 else 'S'}, {abs(lon):.5f}° {'E' if lon >= 0 else 'W'}"
+                 + (f"  ·  {place}" if place else ""))
+    box = W - 2 * M
+    map_top = yy - 12
+    map_y = map_top - box
     if thumb is not None:
         jb = io.BytesIO()
-        thumb.save(jb, format="JPEG", quality=88)
+        thumb.save(jb, format="JPEG", quality=90)
         jb.seek(0)
-        c.drawImage(ImageReader(jb), M, top - box, box, box)
+        c.drawImage(ImageReader(jb), M, map_y, box, box)
     else:
         c.setFillColor(LIGHT)
-        c.rect(M, top - box, box, box, stroke=0, fill=1)
+        c.rect(M, map_y, box, box, stroke=0, fill=1)
         c.setFillColor(GRAY)
-        c.setFont(F, 8)
-        c.drawCentredString(M + box / 2, top - box / 2, "Imagery unavailable offline")
+        c.setFont(F, 10)
+        c.drawCentredString(M + box / 2, map_y + box / 2, "Satellite imagery unavailable offline")
     c.setStrokeColor(LIGHT)
     c.setLineWidth(1)
-    c.rect(M, top - box, box, box, stroke=1, fill=0)
+    c.rect(M, map_y, box, box, stroke=1, fill=0)
     c.saveState()
     c.setFillColor(HexColor("#000000"), alpha=0.55)
-    c.rect(M, top - box, box, 9, stroke=0, fill=1)
+    c.rect(M, map_y, box, 12, stroke=0, fill=1)
     c.restoreState()
-    c.setFont(F, 4.6)
+    c.setFont(F, 6)
     c.setFillColor(white)
-    c.drawString(M + 3, top - box + 3, ESRI_ATTRIBUTION)
+    c.drawString(M + 4, map_y + 4, ESRI_ATTRIBUTION + "  ·  yellow = roof outline, blue = suggested panels")
 
-    tx = M + box + 16
-    tw = W - M - 130 - tx
-    c.setFont(FB, 7)
-    c.setFillColor(AMBER_D)
-    c.drawString(tx, top - 8, "YOUR ROOF")
-    c.setFont(FB, 10.5)
-    c.setFillColor(INK)
-    lines = simpleSplit(address or "Selected rooftop", FB, 10.5, tw)[:2]
-    yy = top - 22
-    for ln in lines:
-        c.drawString(tx, yy, ln)
-        yy -= 13
-    lat, lon = a["centroid"]
-    c.setFont(F, 7.5)
-    c.setFillColor(GRAY)
-    c.drawString(tx, yy, f"{abs(lat):.5f}° {'N' if lat >= 0 else 'S'}, {abs(lon):.5f}° {'E' if lon >= 0 else 'W'}")
-    yy -= 30
-    c.setFont(FB, 25)
+    # facts (left) + score ring (right) under the map
+    fy = map_y - 34
+    c.setFont(FB, 24)
     c.setFillColor(INK)
     area_txt = f"{a['area_m2']:.0f} m²"
-    c.drawString(tx, yy, area_txt)
+    c.drawString(M, fy, area_txt)
     c.setFont(F, 9)
     c.setFillColor(GRAY)
-    c.drawString(tx + pdfmetrics.stringWidth(area_txt, FB, 25) + 6, yy + 1,
+    c.drawString(M + pdfmetrics.stringWidth(area_txt, FB, 24) + 6, fy + 1,
                  f"({inr(a['area_m2'] * 10.7639)} sq ft roof)")
-    yy -= 16
-    c.setFont(F, 8)
-    c.setFillColor(INK)
+    fy -= 17
     info = [
-        f"District / DISCOM: {place or 'Odisha'}" if place else "State: Odisha",
         f"Usable for solar: {s['usable_area_m2']:.0f} m² ({p['usable_fraction'] * 100:.0f}% of roof)",
         f"Roof type: {r['roof_type_label']} (runoff {r['runoff_c']:.2f})",
         f"Outline: {method_label}",
-        f"Panel layout: {s['panels']} × {p['panel_w']} Wp, auto-placed with {p['edge_setback_m']} m edge gap"
-        if s["panels"] else "Panel layout: roof too small for panels",
+        (f"Panel layout: {s['panels']} × {p['panel_w']} Wp, {p['edge_setback_m']} m edge gap"
+         if s["panels"] else "Panel layout: roof too small for panels"),
+        f"Solar: {s['kw']:.2f} kW  ·  Rainwater: {litres(r['annual_harvest_l'])} a year",
     ]
+    c.setFont(F, 8.5)
+    c.setFillColor(INK)
+    text_w = W - 2 * M - 140
     for ln in info:
-        c.drawString(tx, yy, ln)
-        yy -= 11.5
-    _score_ring(c, W - M - 60, top - 62, 40, g["score"], g["grade"], g["solar_pts"],
+        for part in simpleSplit(ln, F, 8.5, text_w)[:2]:
+            if fy < 40:
+                break
+            c.drawString(M, fy, part)
+            fy -= 12
+    _score_ring(c, W - M - 62, map_y - 62, 34, g["score"], g["grade"], g["solar_pts"],
                 g["water_pts"], g.get("rule_pts", 0))
+    c.showPage()
 
-    # ---------------- solar section
-    y0 = 555
-    tile_w = (W - 2 * M - 18) / 4
+    # =============================== PAGE 2 - solar
+    _header(c, W, H, M, a, "Page 2 · Rooftop Solar report", 2, PAGES)
+    y0 = H - 112
     lim = "roof space" if s["limited_by"] == "roof" else "your electricity use"
     _section(c, M, y0, W - 2 * M, "Rooftop Solar",
-             f"{s['kw']:.2f} kW · {s['panels']} panels · sized by {lim} · "
-             f"{s['daily_units_per_kw']:.1f} units/day per kW in {loc.get('district') or 'Odisha'}",
-             AMBER, AMBER_BG, "sun")
+             f"{s['kw']:.2f} kW · {s['panels']} panels · sized by {lim}", AMBER, AMBER_BG, "sun")
+    c.setFont(F, 8)
+    c.setFillColor(GRAY)
+    c.drawString(M, y0 - 14, f"{s['daily_units_per_kw']:.1f} units/day per kW in {district}")
     payback = f"{s['payback_years']:.1f} years" if s["payback_years"] else "—"
     tiles = [
         ("System size", f"{s['kw']:.2f} kW", f"{s['panels']} × {p['panel_w']} Wp panels"),
         ("Units per year", inr(s["annual_gen"]), f"≈ {s['annual_gen'] / 12:.0f} units / month"),
-        ("Bill savings / year", rupees(s["annual_savings"]),
-         f"≈ ₹{inr(s['monthly_savings_avg'])}/month on OERC slabs"),
-        ("Your bill today", rupees(s["bill_before"]),
-         f"{inr(s['annual_units'])} units/yr → {rupees(s['bill_after'])} with solar"),
-        ("Cost after subsidy", rupees(s["net_cost"]),
-         f"{rupees(s['gross_cost'])} − {rupees(s['subsidy_central'])} CFA − {rupees(s['subsidy_state'])} Odisha SFA"),
+        ("Bill savings / year", rupees(s["annual_savings"]), f"≈ ₹{inr(s['monthly_savings_avg'])}/month"),
+        ("Your bill today", rupees(s["bill_before"]), f"→ {rupees(s['bill_after'])}/yr with solar"),
+        ("Cost after subsidy", rupees(s["net_cost"]), f"from {rupees(s['gross_cost'])} before subsidy"),
+        ("Subsidy", rupees(s["subsidy_central"] + s["subsidy_state"]),
+         f"{rupees(s['subsidy_central'])} CFA + {rupees(s['subsidy_state'])} SFA"),
         ("Payback", payback,
-         f"then ~{max(0, s['lifetime_years'] - (s['payback_years'] or s['lifetime_years'])):.0f} years of free power"),
+         f"then ~{max(0, s['lifetime_years'] - (s['payback_years'] or s['lifetime_years'])):.0f} yrs free power"),
         (f"{s['lifetime_years']}-year savings", rupees(s["lifetime_savings"]), f"net gain {rupees(s['lifetime_profit'])}"),
         ("CO₂ avoided", f"{s['co2_t_year']:.1f} t / year", f"{s['co2_t_life']:.0f} t over {s['lifetime_years']} years"),
-        ("Like planting", f"{s['trees_equiv']:.0f} trees", "at ~20 kg CO₂ per tree per year"),
+        ("Like planting", f"{s['trees_equiv']:.0f} trees", "~20 kg CO₂ per tree per year"),
+        ("Units per kW / day", f"{s['daily_units_per_kw']:.1f}", f"sunlight in {district}"),
+        ("Usable roof", f"{s['usable_area_m2']:.0f} m²", f"{p['m2_per_kw']:.0f} m² needed per kW"),
     ]
-    for i, (lb, val, sub) in enumerate(tiles):
-        col, row = i % 4, i // 4
-        _tile(c, M + col * (tile_w + 6), y0 - 44 - row * 44, tile_w, 38, lb, val, sub, AMBER)
-    _bar_chart(c, M, 372, W - 2 * M, 72, s["monthly_gen"], AMBER, s["monthly_consumption"],
+    ty = _tiles(c, M, W, y0 - 24, tiles, AMBER)
+    ch_h = 130
+    _bar_chart(c, M, ty - 28 - ch_h, W - 2 * M, ch_h, s["monthly_gen"], AMBER, s["monthly_consumption"],
                "Month-wise solar generation (units)", "Solar units", "Your monthly use")
+    ny = ty - 28 - ch_h - 36
+    _notes(c, M, ny, W - 2 * M, [
+        ("How we calculated solar", True),
+        (f"Sunlight: NASA POWER ({a['climate']['ghi_avg']:.2f} kWh/m²/day) × temperature-corrected performance "
+         f"ratio {s['pr_avg']:.2f}; {p['m2_per_kw']:.0f} m² per kW (PM Surya Ghar portal); {p['panel_w']} Wp panels.", False),
+        (f"Money: ₹{inr(p['cost_per_kw'])}/kW installed; PM Surya Ghar ₹30k/kW up to 2 kW + ₹18k for the 3rd kW "
+         f"(max ₹78k) plus Odisha SFA ₹25k/kW + ₹10k (max ₹60k).", False),
+        (f"Tariff: OERC domestic {TARIFF_FY} ({_slab_txt()}) + ₹{OERC_FIXED_CHARGE_PER_KW:.0f}/kW/month fixed + "
+         f"{OERC_DUTY_PCT:.0f}% electricity duty; surplus settled at ₹{s['export_rate']:.2f}/unit (GRIDCO APPC), "
+         f"credited up to {s['net_meter_cap'] * 100:.0f}% of your yearly use.", False),
+        (f"CO₂: CEA grid factor {p['co2_kg_per_kwh']} kg/unit; panels lose {p['degradation'] * 100:.1f}%/year; "
+         f"tariff held flat (conservative).", False),
+        ("Next step: get a site survey from an MNRE/OREDA-empanelled vendor, apply on pmsuryaghar.gov.in and "
+         f"register for net metering with {loc.get('discom') or 'your Odisha DISCOM'}.", False),
+    ])
+    c.showPage()
 
-    # ---------------- rain section
-    y1 = 330
+    # =============================== PAGE 3 - rainwater
+    _header(c, W, H, M, a, "Page 3 · Rainwater Harvesting report", 3, PAGES)
+    y1 = H - 112
     _section(c, M, y1, W - 2 * M, "Rainwater Harvesting",
-             f"{r['annual_rain_mm']:.0f} mm rain/year in {loc.get('district') or 'Odisha'} · "
-             f"harvest = area × rain × {r['runoff_c']:.2f}",
-             BLUE, BLUE_BG, "drop")
-    wl = r["recharge_well"]
-    ch = r["chhata"]
+             f"{r['annual_rain_mm']:.0f} mm rain/year in {district}", BLUE, BLUE_BG, "drop")
+    c.setFont(F, 8)
+    c.setFillColor(GRAY)
+    c.drawString(M, y1 - 14, f"harvest = roof area × rain × runoff {r['runoff_c']:.2f}")
+    wl, ch = r["recharge_well"], r["chhata"]
     wells = f"{wl['wells']} × " if wl["wells"] > 1 else ""
     tiles = [
         ("Rainwater per year", litres(r["annual_harvest_l"]), f"from {r['annual_rain_mm']:.0f} mm of rain"),
-        ("Water for", f"{r['days_of_water']:.0f} days", f"family of {p['family_size']} at {p['lpcd']} L/person/day"),
+        ("Water for", f"{r['days_of_water']:.0f} days", f"{p['family_size']} people at {p['lpcd']} L/person/day"),
         ("Storage tank", f"{inr(r['tank']['litres'])} L", f"captures a {p['design_rain_mm']:.0f} mm rain day"),
         ("Recharge well", f"{wells}{wl['diameter_m']:.0f} m Ø × {wl['depth_m']:.1f} m",
-         f"holds {inr(wl['capacity_l'])} L (ODA: 6 m³ per 100 m² roof)"),
+         f"holds {inr(wl['capacity_l'])} L"),
         ("Odisha rule", f"{inr(r['rule_min_l'])} L",
-         f"{r['rule']['l_per_m2']:.0f} L/m² of roof · ODA Rules 2020"
-         + (" · met" if r["meets_rule"] else f" · short by {litres(r['rule_gap_l'])}")),
+         f"{r['rule']['l_per_m2']:.0f} L/m² · " + ("met" if r["meets_rule"] else f"short {litres(r['rule_gap_l'])}")),
         ("CHHATA subsidy", rupees(ch["subsidy"]) if ch["eligible"] else "not eligible",
-         (f"50% of ~{rupees(ch['est_cost'])} cost · Govt. of Odisha"
-          if ch["eligible"] else (ch["reasons"][0][:44] if ch["reasons"] else "—"))),
+         f"50% of ~{rupees(ch['est_cost'])} cost" if ch["eligible"] else "see notes below"),
         ("Tankers avoided", f"{r['tankers_saved']:.0f} / year", f"of {inr(p['tanker_litres'])} L each"),
+        ("Downpipes", f"{r['downpipes']['count']} × {r['downpipes']['diameter_mm']:.0f} mm", "to carry the roof runoff"),
+        ("Runoff factor", f"{r['runoff_c']:.2f}", r["roof_type_label"]),
     ]
-    for i, (lb, val, sub) in enumerate(tiles):
-        col, row = i % 4, i // 4
-        _tile(c, M + col * (tile_w + 6), y1 - 44 - row * 44, tile_w, 38, lb, val, sub, BLUE)
-    _bar_chart(c, M, 150, W - 2 * M, 72, r["monthly_harvest_l"], BLUE, r["monthly_demand_l"],
-               "Month-wise rainwater harvest (litres)", "Harvest", "Family water use")
-
-    # ---------------- footer: assumptions + QR
-    c.setStrokeColor(LIGHT)
-    c.setLineWidth(0.8)
-    c.line(M, 128, W - M, 128)
-    qr = 88
-    renderPDF.draw(_qr_drawing(share_url, qr), c, W - M - qr, 34)
-    c.setFont(FB, 6.5)
-    c.setFillColor(INK)
-    c.drawCentredString(W - M - qr / 2, 26, "Scan to open this roof")
+    ty = _tiles(c, M, W, y1 - 24, tiles, BLUE)
+    _bar_chart(c, M, ty - 28 - ch_h, W - 2 * M, ch_h, r["monthly_harvest_l"], BLUE, r["monthly_demand_l"],
+               "Month-wise rainwater harvest (litres)", "Harvest", "Water use")
+    ny = ty - 28 - ch_h - 36
+    qr = 96
     notes = [
-        ("How we calculated", True),
-        (f"Solar: NASA POWER sunlight ({a['climate']['ghi_avg']:.2f} kWh/m²/day) × temperature-corrected performance "
-         f"ratio {s['pr_avg']:.2f}; {p['m2_per_kw']:.0f} m² per kW (PM Surya Ghar portal); {p['panel_w']} Wp panels.", False),
-        (f"Money: ₹{inr(p['cost_per_kw'])}/kW installed; PM Surya Ghar ₹30k/kW up to 2 kW + ₹18k for the 3rd kW "
-         f"(max ₹78k) plus Odisha SFA ₹25k/kW + ₹10k (max ₹60k); OERC domestic tariff {TARIFF_FY} "
-         f"({_slab_txt()}) + ₹{OERC_FIXED_CHARGE_PER_KW:.0f}/kW/month fixed + {OERC_DUTY_PCT:.0f}% "
-         f"electricity duty; surplus settled at ₹{s['export_rate']:.2f}/unit (GRIDCO APPC), credited up to "
-         f"{s['net_meter_cap'] * 100:.0f}% of your yearly use.", False),
-        (f"CO₂: CEA grid factor {p['co2_kg_per_kwh']} kg/unit; panels lose {p['degradation'] * 100:.1f}%/year; "
-         f"tariff held flat (conservative).", False),
-        (f"Rain: 1 mm on 1 m² = 1 litre; runoff {r['runoff_c']:.2f}; tank sized for a {p['design_rain_mm']:.0f} mm "
-         f"rain day; recharge well sized to the Odisha Development Authorities Rules 2020 norm of 6 m³ per "
-         f"100 m² of roof ({r['rule']['l_per_m2']:.0f} L/m²), with {r['downpipes']['count']} × "
-         f"{r['downpipes']['diameter_mm']:.0f} mm downpipes.", False),
+        ("How we calculated rainwater", True),
+        (f"1 mm of rain on 1 m² = 1 litre; runoff {r['runoff_c']:.2f}; tank sized for a {p['design_rain_mm']:.0f} mm "
+         f"rain day; water use = {p['family_size']} people (home, school or institution) × {p['lpcd']} L/day.", False),
+        (f"Recharge well sized to the Odisha Development Authorities Rules 2020 norm of 6 m³ per 100 m² of roof "
+         f"({r['rule']['l_per_m2']:.0f} L/m²).", False),
         (f"CHHATA (Govt. of Odisha, {ch['scheme_years']}): 50% of the system cost or ₹{inr(ch['max_subsidy'])}, "
          f"whichever is less, for roofs of {ch['roof_min_m2']:.0f}–{ch['roof_max_m2']:.0f} m² and at most "
-         f"{ch['max_floors']} floors; a recharge unit is compulsory. Apply at echhata.odisha.gov.in.", False),
-        ("This is a screening estimate for awareness, not an engineering design. Before buying, get a site survey "
-         "from an MNRE/OREDA-empanelled vendor, apply on pmsuryaghar.gov.in and register for net metering with "
-         f"{loc.get('discom') or 'your Odisha DISCOM'}.", False),
-        (f"Climate: {a['climate']['source']}. {ESRI_ATTRIBUTION}. Made with SuryaJal (MobileSAM + FastAPI).", False),
+         f"{ch['max_floors']} floors; a recharge unit is compulsory. Apply at echhata.odisha.gov.in."
+         + ("" if ch["eligible"] or not ch["reasons"] else " Not eligible: " + "; ".join(ch["reasons"]) + "."), False),
+        (f"Climate: {a['climate']['source']}. Made with SuryaJal (MobileSAM + FastAPI).", False),
     ]
-    yy = 116
-    for text, bold in notes:
-        font, size = (FB, 7.5) if bold else (F, 6.4)
-        c.setFont(font, size)
-        c.setFillColor(INK if bold else GRAY)
-        for ln in simpleSplit(text, font, size, W - 2 * M - qr - 16):
-            c.drawString(M, yy, ln)
-            yy -= 8.2
-        yy -= 1.5
+    _notes(c, M, ny, W - 2 * M - qr - 20, notes, min_y=44)
+    renderPDF.draw(_qr_drawing(share_url, qr), c, W - M - qr, ny - qr + 8)
+    c.setFont(FB, 7)
+    c.setFillColor(INK)
+    c.drawCentredString(W - M - qr / 2, ny - qr, "Scan to open this roof")
     c.showPage()
     c.save()
     return buf.getvalue()

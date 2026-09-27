@@ -47,3 +47,15 @@ def test_report_pdf(client):
 def test_qr_svg(client):
     r = client.get("/api/qr.svg", params={"data": "https://example.com/r?p=abc"})
     assert r.status_code == 200 and "<svg" in r.text
+
+
+def test_geocode_pincode_offline(client, monkeypatch):
+    import app.main as m
+
+    async def boom(*a, **k):
+        raise m.httpx.ConnectError("offline")
+    monkeypatch.setattr(m, "_nominatim", boom)
+    r = client.get("/api/geocode", params={"q": "751007"}).json()
+    assert r[0]["district"] and "Sahid Nagar" in r[0]["name"]
+    r = client.get("/api/geocode", params={"q": "768 004"}).json()   # district-level fallback
+    assert "Sambalpur" in r[0]["name"]
