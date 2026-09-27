@@ -59,3 +59,33 @@ def test_geocode_pincode_offline(client, monkeypatch):
     assert r[0]["district"] and "Sahid Nagar" in r[0]["name"]
     r = client.get("/api/geocode", params={"q": "768 004"}).json()   # district-level fallback
     assert "Sambalpur" in r[0]["name"]
+
+
+def test_geocode_handles_bad_upstream_response(client, monkeypatch):
+    import app.main as m
+
+    async def bad_shape(*a, **k):
+        # Some proxies return a JSON error object where Nominatim normally returns a list.
+        return {"error": "temporarily unavailable"}
+
+    monkeypatch.setattr(m, "_nominatim", bad_shape)
+    # Search remains usable through its local PIN fallback instead of raising a 500.
+    r = client.get("/api/geocode", params={"q": "751007"})
+    assert r.status_code == 200
+    assert "Sahid Nagar" in r.json()[0]["name"]
+
+    r = client.get("/api/geocode", params={"q": "Cuttack"})
+    assert r.status_code == 503
+    assert "needs internet" in r.json()["detail"]
+
+
+def test_geocode_skips_malformed_upstream_entries(client, monkeypatch):
+    import app.main as m
+
+    async def malformed(*a, **k):
+        return [{"display_name": "broken result"}, {"lat": "NaN", "lon": "0"}]
+
+    monkeypatch.setattr(m, "_nominatim", malformed)
+    r = client.get("/api/geocode", params={"q": "Cuttack"})
+    assert r.status_code == 200
+    assert r.json() == []
