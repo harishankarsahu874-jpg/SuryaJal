@@ -10,7 +10,7 @@ import { api, type LocationInfo, type SegmentResponse } from "@/lib/api"
 import { searchPlaces, type GeoResult } from "@/lib/geosearch"
 import { captureCrop } from "@/lib/mapcrop"
 import { areaM2, INDIA_BOUNDS, inIndia, ODISHA_CENTER, ODISHA_CITIES, ODISHA_ZOOM, type LatLng } from "@/lib/geo"
-import { EsriImagery, type ImageryFallbackEvent } from "@/lib/imagery"
+import { EsriImagery } from "@/lib/imagery"
 import { fmtIN, litres, sqft } from "@/lib/format"
 import { cn } from "@/lib/utils"
 import { useDashboard } from "./state"
@@ -83,6 +83,15 @@ async function ipLocate(): Promise<{ lat: number; lon: number; city: string | nu
   return clusters[0].slice().sort((x, y) => x.accuracyKm - y.accuracyKm)[0]
 }
 
+/** Great-circle distance in km (used to sanity-check IP fixes before flying). */
+function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number) {
+  const dLat = ((lat2 - lat1) * Math.PI) / 180
+  const dLon = ((lon2 - lon1) * Math.PI) / 180
+  const a = Math.sin(dLat / 2) ** 2 +
+    Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLon / 2) ** 2
+  return 6371 * 2 * Math.asin(Math.sqrt(a))
+}
+
 /** Zoom that matches how precise a fix actually is (never pretend an IP is a rooftop). */
 function zoomForAccuracy(m: number) {
   if (m < 100) return 18
@@ -108,7 +117,7 @@ export function MapPanel({ visible }: { visible: boolean }) {
   } | null>(null)
   // interaction state lives in a ref (Leaflet handlers are registered once) + a tick to re-render the UI
   const S = useRef({ mode: "ai" as "ai" | "draw", busy: false, aiPoints: [] as SegPoint[], refine: null as 0 | 1 | null,
-    drawPts: [] as LatLng[], warned: false, zoom: ODISHA_ZOOM }).current
+    drawPts: [] as LatLng[], zoom: ODISHA_ZOOM }).current
   const [, tick] = useReducer((x: number) => x + 1, 0)
   const [hint, setHintState] = useState<{ html: ReactNode; busy?: boolean }>({ html: <>Search your area, zoom in and <b>tap your roof</b></> })
   const [liveArea, setLiveArea] = useState<number | null>(null)
@@ -133,17 +142,11 @@ export function MapPanel({ visible }: { visible: boolean }) {
     }).setView(ODISHA_CENTER, ODISHA_ZOOM)          // Bhubaneswar, Odisha
     mapRef.current = map
     // Esri has no z19 close-ups in many Odisha towns (it answers with a grey "Map data not yet
-    // available" tile). EsriImagery detects that and shows the nearest zoom that has a photo.
-    const imagery = new EsriImagery(`${ESRI}/World_Imagery/MapServer/tile/{z}/{y}/{x}`, {
+    // available" tile). EsriImagery detects that and silently shows the nearest zoom that has a photo.
+    new EsriImagery(`${ESRI}/World_Imagery/MapServer/tile/{z}/{y}/{x}`, {
       maxNativeZoom: 19, maxZoom: 21,
       attribution: "Imagery © Esri, Maxar, Earthstar Geographics | Search © OpenStreetMap",
     }).addTo(map)
-    imagery.once("imagery:fallback", (e) => {
-      const lv = (e as ImageryFallbackEvent).levelsUp
-      toast.info(`No street-level satellite photo exists for this spot yet — showing the nearest zoom ` +
-        `(${lv} level${lv > 1 ? "s" : ""} out, a little blurry). You can still tap your roof: the AI adapts.`,
-        { duration: 9000 })
-    })
     const labels = L.layerGroup([
       L.tileLayer(`${ESRI}/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}`, { maxNativeZoom: 19, maxZoom: 21, opacity: 0.9 }),
       L.tileLayer(`${ESRI}/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}`, { maxNativeZoom: 19, maxZoom: 21, opacity: 0.5 }),
@@ -310,7 +313,7 @@ export function MapPanel({ visible }: { visible: boolean }) {
     showPrompts()
     const last = pts[pts.length - 1]
     ly.pulse = L.marker([last.lat, last.lon], { icon: divIcon("sj-pulse"), interactive: false }).addTo(map)
-    setHint(<>MobileSAM is tracing your roof…</>, true)
+    setHint(<>Tracing your roof…</>, true)
     const zoom = clamp(Math.round(map.getZoom()), 17, 19)
     const t0 = performance.now()
     try {
@@ -334,10 +337,6 @@ export function MapPanel({ visible }: { visible: boolean }) {
       const secs = ((performance.now() - t0) / 1000).toFixed(1)
       setHint(<>Roof found in {secs}s — drag the <b>yellow dots</b> to fine-tune</>)
       r.warnings?.forEach((w) => toast.warning(w, { duration: 7000 }))
-      if (r.method !== "mobilesam" && !S.warned) {
-        S.warned = true
-        toast.warning("Basic OpenCV mode — for best accuracy run: python scripts/download_models.py", { duration: 7000 })
-      }
     } catch (err) {
       toast.error((err as Error).message)
       if (S.aiPoints.length > 1) S.aiPoints.pop()
@@ -451,7 +450,7 @@ export function MapPanel({ visible }: { visible: boolean }) {
 
     const arrived = (lat: number, lon: number, opts: { approx?: boolean; accuracy: number; city?: string | null }) => {
       if (!inIndia(lat, lon)) {
-        toast.warning("We could not place you on the map in India — search your area or PIN code above instead.")
+        toast.warning("That spot is outside India — search your area or PIN code above instead.")
         return
       }
       const zoom = opts.approx ? zoomForAccuracy(opts.accuracy) : 19
@@ -464,35 +463,34 @@ export function MapPanel({ visible }: { visible: boolean }) {
         radius, color: "#38BDF8", weight: 1.5, fillColor: "#38BDF8", fillOpacity: 0.12, interactive: false,
       }).addTo(map)
       ly.me = L.marker([lat, lon], { icon: divIcon("sj-me"), interactive: false }).addTo(map)
-      // tell the user which district and which Odisha DISCOM serves this spot
+      const acc = opts.accuracy >= 1000 ? `±${Math.round(opts.accuracy / 1000)} km` : `±${Math.round(opts.accuracy)} m`
+      const approxNote = `Approximate area ${acc} — zoom to your house and tap its roof.`
+      const hereNote = `You are here ${acc}.`
+      // which district and which Odisha DISCOM serves this spot (shown only when short)
       api<LocationInfo>(`/api/odisha/locate?lat=${lat.toFixed(5)}&lon=${lon.toFixed(5)}`)
         .then((l) => {
-          const acc = opts.approx
-            ? `±${opts.accuracy >= 1000 ? `${Math.round(opts.accuracy / 1000)} km` : `${Math.round(opts.accuracy)} m`}`
-            : `±${Math.round(opts.accuracy)} m`
-          const note = opts.approx
-            ? `Approximate location${opts.city ? ` (${opts.city})` : ""} ${acc} from your internet — it can be ` +
-              "far off. Zoom in or search to your house."
-            : `You are here (${acc}).`
-          if (!l.in_odisha) {
-            toast.warning(`${note} SuryaJal is built for Odisha — tariffs, subsidies and rainwater ` +
-              "rules won't apply at this spot.", { duration: 9000 })
-            return
-          }
-          const where = `${l.district} district, ${l.discom}`
-          toast.success(`${note} ${where} — now tap your roof!`)
+          const where = l.in_odisha ? ` ${l.district}, ${l.discom}.` : ""
+          toast.success(opts.approx ? approxNote : `${hereNote}${where} Now tap your roof!`)
         })
-        .catch(() => toast.success(opts.approx
-          ? "Approximate location found — zoom in to your house and tap its roof!"
-          : `You are here (±${Math.round(opts.accuracy)} m). Now tap your roof!`))
+        .catch(() => toast.success(opts.approx ? approxNote : `${hereNote} Now tap your roof!`))
     }
 
     // GPS blocked (common inside embedded previews) or denied -> ask the network instead
     const fallback = async () => {
       const hit = await ipLocate()
-      if (hit) return void arrived(hit.lat, hit.lon, { approx: true, accuracy: hit.accuracyKm * 1000, city: hit.city })
-      toast.warning("Location is off or blocked — search your area or PIN code above instead. " +
-        "(Inside an embedded preview, open the app in its own tab to allow location.)")
+      if (!hit) {
+        toast.warning("Location is off or blocked — search your area or PIN code above instead.")
+        return
+      }
+      const fix = { approx: true as const, accuracy: hit.accuracyKm * 1000, city: hit.city }
+      const centre = map.getCenter()
+      const kmAway = haversineKm(hit.lat, hit.lon, centre.lat, centre.lng)
+      if (kmAway < 150) return void arrived(hit.lat, hit.lon, fix)   // close to the view: go
+      // IP fixes are often hundreds of km wrong - ask before jumping anywhere
+      toast(`The internet thinks you're near ${hit.city ?? "a city"} — often wrong. Show that area?`, {
+        duration: 12000,
+        action: { label: "Show", onClick: () => arrived(hit.lat, hit.lon, fix) },
+      })
     }
 
     if (!navigator.geolocation) return void fallback()
@@ -553,7 +551,8 @@ export function MapPanel({ visible }: { visible: boolean }) {
               ? <>Zoom in to your house in <b>{g.district}</b> ({g.discom}) and <b>tap its roof</b> 👆</>
               : <>Zoom in to your house and <b>tap its roof</b> 👆</>)
           }}
-          onLatLon={(lat, lon) => mapRef.current?.flyTo([lat, lon], 19, { duration: 1.2 })} />
+          onLatLon={(lat, lon) => mapRef.current?.flyTo([lat, lon], 19, { duration: 1.2 })}
+          getBias={() => { const c = mapRef.current?.getCenter(); return c ? { lat: c.lat, lon: c.lng } : null }} />
         <div className="no-scrollbar flex max-w-full items-center gap-1.5 overflow-x-auto pb-0.5">
           {ODISHA_CITIES.map((c) => (
             <button key={c.name} type="button"
@@ -577,7 +576,7 @@ export function MapPanel({ visible }: { visible: boolean }) {
       {ctx.config && (
         <div className="absolute top-3 right-3 z-[500] hidden items-center gap-1.5 rounded-full bg-white/90 px-2.5 py-1.5 text-[11px] font-semibold text-sage-800 shadow sm:inline-flex">
           <span className={cn("size-2 rounded-full", ctx.config.engine === "mobilesam" ? "bg-emerald-500" : "bg-amber-500")} />
-          {ctx.config.engine === "mobilesam" ? "MobileSAM ready" : "OpenCV mode"}
+          {ctx.config.engine === "mobilesam" ? "High-accuracy AI" : "Basic AI"}
         </div>
       )}
 
@@ -667,7 +666,12 @@ function Chip({ children, on, onClick, tone }: { children: ReactNode; on?: boole
   )
 }
 
-function SearchBox({ onPick, onLatLon }: { onPick: (g: GeoResult) => void; onLatLon: (lat: number, lon: number) => void }) {
+function SearchBox({ onPick, onLatLon, getBias }: {
+  onPick: (g: GeoResult) => void
+  onLatLon: (lat: number, lon: number) => void
+  /** current map centre, used to rank nearby places first (like Google Maps) */
+  getBias?: () => { lat: number; lon: number } | null
+}) {
   const [q, setQ] = useState("")
   const [results, setResults] = useState<GeoResult[]>([])
   const [busy, setBusy] = useState(false)
@@ -690,7 +694,7 @@ function SearchBox({ onPick, onLatLon }: { onPick: (g: GeoResult) => void; onLat
     const t = setTimeout(async () => {
       setBusy(true)
       try {
-        const rows = await searchPlaces(text, { signal: ctl.signal })
+        const rows = await searchPlaces(text, { signal: ctl.signal, bias: getBias?.() ?? undefined })
         if (!ctl.signal.aborted) { setResults(rows); setHi(-1) }
       } catch {
         if (!ctl.signal.aborted) setResults([])
@@ -699,6 +703,7 @@ function SearchBox({ onPick, onLatLon }: { onPick: (g: GeoResult) => void; onLat
       }
     }, 250)
     return () => { clearTimeout(t); ctl.abort() }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [q])
 
   const setQuery = (v: string) => {
@@ -719,7 +724,7 @@ function SearchBox({ onPick, onLatLon }: { onPick: (g: GeoResult) => void; onLat
     // nothing yet (paste + instant Enter): run the deep search now
     setBusy(true)
     try {
-      const rows = await searchPlaces(text, { deep: true })
+      const rows = await searchPlaces(text, { deep: true, bias: getBias?.() ?? undefined })
       if (!rows.length) toast.warning("No place found — try a nearby landmark, area or PIN code")
       else if (rows.length === 1) pick(rows[0])
       else { setResults(rows); setHi(-1) }
@@ -731,7 +736,7 @@ function SearchBox({ onPick, onLatLon }: { onPick: (g: GeoResult) => void; onLat
   }
 
   return (
-    <form ref={boxRef} onSubmit={submit} className="relative w-full" role="search" autoComplete="off">
+    <form ref={boxRef} onSubmit={submit} className="relative z-10 w-full" role="search" autoComplete="off">
       <div className="flex h-12 items-center gap-2 rounded-2xl border bg-card/95 pr-1.5 pl-3.5 shadow-lg backdrop-blur focus-within:ring-3 focus-within:ring-ring/40">
         <Search className="size-[18px] shrink-0 text-muted-foreground" />
         <input value={q} onChange={(e) => setQuery(e.target.value)}

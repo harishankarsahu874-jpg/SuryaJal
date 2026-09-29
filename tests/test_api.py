@@ -87,9 +87,9 @@ def test_geocode_place_names_offline(client, monkeypatch):
     assert "Patia" in r[0]["name"]
     r = client.get("/api/geocode", params={"q": "Brahmapur"}).json()   # alias spelling
     assert "Berhampur" in r[0]["name"]
-    # landmark-ish free text with punctuation still falls back to the right town
+    # curated landmarks beat the generic town fallback (this used to fall back to Berhampur)
     r = client.get("/api/geocode", params={"q": "nist university,berhampur"}).json()
-    assert "Berhampur" in r[0]["name"]
+    assert "NIST" in r[0]["name"] and r[0]["type"] == "poi"
 
 
 def test_geocode_outside_odisha_without_internet(client, monkeypatch):
@@ -138,6 +138,40 @@ def test_geocode_skips_malformed_upstream_entries(client, monkeypatch):
     # malformed upstream rows are dropped; the offline gazetteer still answers
     assert rows and all(isinstance(x["lat"], float) and isinstance(x["lon"], float) for x in rows)
     assert any("Cuttack" in x["name"] for x in rows)
+
+
+def test_suggest_landmarks_nist_first(client):
+    """"NIST UNIVERSITY" must find NIST Berhampur (Palur Hills), not foreign universities."""
+    r = client.get("/api/suggest", params={"q": "NIST UNIVERSITY"}).json()
+    assert r and "NIST" in r[0]["name"] and r[0]["type"] == "poi"
+    assert abs(r[0]["lat"] - 19.1868) < 0.02 and abs(r[0]["lon"] - 84.7529) < 0.02
+    r = client.get("/api/suggest", params={"q": "nist"}).json()
+    assert "NIST" in r[0]["name"]
+    # the campus PIN code resolves to the same area (Palur Hills / Golanthara)
+    r = client.get("/api/suggest", params={"q": "761008"}).json()
+    assert any("Palur" in x["name"] for x in r)
+
+
+def test_geocode_drops_foreign_rows(client, monkeypatch):
+    """Upstream search engines sometimes answer with foreign cities - the map is India-only,
+    so those rows must be dropped and Odisha rows kept."""
+    import app.main as m
+
+    async def foreign(*a, **k):
+        return [
+            {"display_name": "Tiraspol, Moldova", "lat": 46.84, "lon": 29.60, "type": "city"},
+            {"display_name": "Boulder, Colorado, USA", "lat": 40.01, "lon": -105.27, "type": "city"},
+            {"display_name": "Berhampur, Odisha, India", "lat": 19.31, "lon": 84.80, "type": "city"},
+        ]
+
+    monkeypatch.setattr(m, "_nominatim", foreign)
+    rows = client.get("/api/geocode", params={"q": "somewhere"}).json()
+    assert rows
+    from app.places import in_india
+    assert all(in_india(x["lat"], x["lon"]) for x in rows), "foreign rows leaked through"
+    # Odisha answers come first
+    from app.odisha import in_odisha
+    assert in_odisha(rows[0]["lat"], rows[0]["lon"])
 
 
 def _synthetic_crop_b64():

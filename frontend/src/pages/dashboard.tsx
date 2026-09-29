@@ -57,7 +57,7 @@ function Dashboard() {
         {config && (
           <span className="hidden items-center gap-1.5 rounded-full bg-secondary px-2.5 py-1 text-[11px] font-semibold text-secondary-foreground lg:inline-flex">
             <span className={cn("size-2 rounded-full", config.engine === "mobilesam" ? "bg-emerald-500" : "bg-amber-500")} />
-            {config.engine === "mobilesam" ? "MobileSAM ready" : "OpenCV mode"}
+            {config.engine === "mobilesam" ? "High-accuracy AI" : "Basic AI"}
           </span>
         )}
         <div className="ml-auto flex items-center gap-1.5">

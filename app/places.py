@@ -53,6 +53,45 @@ _ALIASES = {
 _WS = re.compile(r"\s+")
 _WORDS = re.compile(r"[a-z0-9]+")
 
+# India (S, W, N, E) - the map is India-only, and search results should be too
+INDIA_BBOX = (6.0, 67.5, 37.5, 98.0)
+
+
+def in_india(lat: float, lon: float) -> bool:
+    s, w, n, e = INDIA_BBOX
+    return s <= lat <= n and w <= lon <= e
+
+
+# Major Odisha institutions & landmarks - the places people actually type in
+# ("NIST", "KIIT", "Jagannath Temple"…). Name, lat, lon, extra search keys.
+LANDMARKS: List[Tuple[str, float, float, List[str]]] = [
+    ("NIST University, Berhampur", 19.1868, 84.7529,
+     ["nist", "nist university", "nist berhampur", "national institute of science and technology"]),
+    ("Berhampur University", 19.2992, 84.8816, ["berhampur university", "brahmapur university"]),
+    ("MKCG Medical College, Berhampur", 19.3145, 84.8063, ["mkcg", "mkcg medical college"]),
+    ("Parala Maharaja Engineering College, Palur Hills", 19.1856, 84.7530, ["pmec", "parala maharaja"]),
+    ("KIIT University, Bhubaneswar", 20.3551, 85.8173, ["kiit", "kiit university", "kiit bhubaneswar"]),
+    ("ITER / SOA University, Bhubaneswar", 20.3414, 85.8077, ["iter", "soa university", "siksha o anusandhan"]),
+    ("IIT Bhubaneswar", 20.1493, 85.6677, ["iit bhubaneswar", "iit bbs"]),
+    ("AIIMS Bhubaneswar", 20.2364, 85.7773, ["aiims bhubaneswar", "aiims"]),
+    ("Utkal University (Vani Vihar), Bhubaneswar", 20.2968, 85.8220, ["utkal university", "vani vihar"]),
+    ("Ravenshaw University, Cuttack", 20.4815, 85.8787, ["ravenshaw", "ravenshaw university"]),
+    ("NIT Rourkela", 22.2488, 84.9015, ["nit rourkela", "nit rkl"]),
+    ("VSSUT, Burla (Sambalpur)", 21.4945, 83.8980, ["vssut", "veer surendra sai university"]),
+    ("Bhubaneswar Railway Station", 20.2687, 85.8316, ["bhubaneswar station", "bbs station"]),
+    ("Berhampur Railway Station", 19.3120, 84.7904, ["berhampur station", "brahmapur station"]),
+    ("Puri Jagannath Temple", 19.8050, 85.8181, ["jagannath temple", "jagannath", "puri temple"]),
+    ("Konark Sun Temple", 19.8876, 86.0945, ["konark", "sun temple", "konark temple"]),
+    ("Lingaraj Temple, Bhubaneswar", 20.2381, 85.8318, ["lingaraj", "lingaraj temple"]),
+    ("Dhauli Shanti Stupa, Bhubaneswar", 20.1919, 85.8466, ["dhauli", "shanti stupa", "dhauli hills"]),
+    ("Chilika Lake (Barkul)", 19.7200, 85.3200, ["chilika", "chilika lake", "barkul"]),
+    ("Gopalpur Sea Beach", 19.2668, 84.9028, ["gopalpur", "gopalpur beach", "gopalpur on sea"]),
+    ("Hirakud Dam, Sambalpur", 21.5333, 83.8667, ["hirakud", "hirakud dam"]),
+    ("Simlipal National Park, Mayurbhanj", 21.8333, 86.5000, ["simlipal", "similipal"]),
+    ("Biju Patnaik Airport, Bhubaneswar", 20.2444, 85.8178, ["bhubaneswar airport", "bbs airport", "biju patnaik airport"]),
+    ("Paradeep Port", 20.2667, 86.6333, ["paradeep", "paradip", "paradip port"]),
+]
+
 
 def _norm(s: str) -> str:
     return _WS.sub(" ", (s or "").strip().lower())
@@ -79,6 +118,10 @@ def _catalogue() -> Tuple[Tuple[str, float, float, str, Tuple[str, ...]], ...]:
         k = _norm(name)
         if k and k not in rows:
             rows[k] = (name, lat, lon, typ, tuple(dict.fromkeys(keys)))
+
+    # 0) curated Odisha landmarks (universities, temples, stations, tourist spots)
+    for name, lat, lon, extra in LANDMARKS:
+        add(name, lat, lon, "poi", _keys(*extra, name))
 
     # 1) district HQ towns + the districts themselves (bundled NASA POWER points)
     for p in odisha.points():

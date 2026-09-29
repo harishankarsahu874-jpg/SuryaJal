@@ -407,8 +407,8 @@ async def geocode(q: str = Query(..., min_length=2, max_length=200)):
             continue
         if not (-85 <= lat <= 85 and -180 <= lon <= 180):
             continue
-        if ", India" in name and not any(t in name for t in (", Odisha", "Odisha,")):
-            continue                       # outside the State: skip it
+        if not places.in_india(lat, lon):
+            continue                       # the map is India-only: never show rows it can't reach
         out.append(_geo_row(name, lat, lon, str(d.get("type", ""))))
     # ---- offline answers (always available): the bundled Odisha PIN table + gazetteer
     offline: list = []
@@ -420,7 +420,8 @@ async def geocode(q: str = Query(..., min_length=2, max_length=200)):
     for name, lat, lon, typ in places.search(q):
         offline.append(_geo_row(f"{name}, Odisha", lat, lon, typ))
     out = _merge_rows(out, offline)
-    if not out and data:                   # nothing in Odisha matched - show what we found
+    out.sort(key=lambda r: 0 if odisha.in_odisha(r["lat"], r["lon"]) else 1)   # Odisha first
+    if not out and data:                   # nothing above matched - show Indian results we found
         for d in data:
             if not isinstance(d, dict):
                 continue
@@ -431,7 +432,7 @@ async def geocode(q: str = Query(..., min_length=2, max_length=200)):
             name = d.get("display_name", "")
             if (not isinstance(name, str) or not name
                     or not (math.isfinite(lat) and math.isfinite(lon))
-                    or not (-85 <= lat <= 85 and -180 <= lon <= 180)):
+                    or not places.in_india(lat, lon)):
                 continue
             out.append({"name": name, "lat": lat, "lon": lon, "type": str(d.get("type", "")),
                         "district": None, "discom": None})

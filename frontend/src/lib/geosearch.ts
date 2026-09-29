@@ -8,6 +8,7 @@
  *      is online) - used on explicit "Go".
  */
 import { api } from "@/lib/api"
+import { inIndia } from "@/lib/geo"
 
 export interface GeoResult {
   name: string
@@ -20,10 +21,15 @@ export interface GeoResult {
   kind?: string
 }
 
-// app/geo.py NOMINATIM_VIEWBOX - Odisha (plus a small margin)
-const ODISHA = { minLon: 81.0, minLat: 17.4, maxLon: 87.9, maxLat: 22.9 }
-const inOdisha = (lat: number, lon: number) =>
-  lon >= ODISHA.minLon && lon <= ODISHA.maxLon && lat >= ODISHA.minLat && lat <= ODISHA.maxLat
+const ODISHA_CENTER = { lat: 20.2961, lon: 85.8245 }
+
+function distanceKm(lat1: number, lon1: number, lat2: number, lon2: number) {
+  const dLat = ((lat2 - lat1) * Math.PI) / 180
+  const dLon = ((lon2 - lon1) * Math.PI) / 180
+  const a = Math.sin(dLat / 2) ** 2 +
+    Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLon / 2) ** 2
+  return 6371 * 2 * Math.asin(Math.sqrt(a))
+}
 
 const pretty = (s: string) => (s ? s.charAt(0).toUpperCase() + s.slice(1).replace(/_/g, " ") : "")
 
@@ -69,16 +75,14 @@ function photonRow(f: PhotonFeature): GeoResult | null {
   return { name, lat, lon, type, kind, district: null, discom: null }
 }
 
-async function photonSearch(q: string, signal?: AbortSignal): Promise<GeoResult[]> {
-  const url = `https://photon.komoot.io/api/?q=${encodeURIComponent(q)}&limit=6&lang=en&lat=20.2961&lon=85.8245`
+async function photonSearch(q: string, bias: { lat: number; lon: number }, signal?: AbortSignal): Promise<GeoResult[]> {
+  const url = `https://photon.komoot.io/api/?q=${encodeURIComponent(q)}&limit=6&lang=en` +
+    `&lat=${bias.lat.toFixed(4)}&lon=${bias.lon.toFixed(4)}`
   try {
     const r = await fetch(url, { signal })
     if (!r.ok) return []
     const j = await r.json() as { features?: PhotonFeature[] }
-    const rows = (j.features ?? []).map(photonRow).filter((x): x is GeoResult => !!x)
-    // Odisha first (the app is Odisha-specific), then anything else the user asked for
-    rows.sort((a, b) => Number(inOdisha(b.lat, b.lon)) - Number(inOdisha(a.lat, a.lon)))
-    return rows
+    return (j.features ?? []).map(photonRow).filter((x): x is GeoResult => !!x)
   } catch {
     return []                                  // offline / blocked: the local rows still show
   }
@@ -86,30 +90,53 @@ async function photonSearch(q: string, signal?: AbortSignal): Promise<GeoResult[
 
 const LOCAL_KIND: Record<string, string> = {
   town: "Town", suburb: "Locality", county: "District",
-  postcode: "PIN code", postcode_area: "PIN area",
+  postcode: "PIN code", postcode_area: "PIN area", poi: "Landmark",
 }
 
-/** Suggestion rows: `deep` adds the full /api/geocode pass (Nominatim on live servers). */
-export async function searchPlaces(q: string, opts: { deep?: boolean; signal?: AbortSignal } = {}): Promise<GeoResult[]> {
+/** Suggestion rows: `deep` adds the full /api/geocode pass (Nominatim on live servers).
+ *  Rows outside India are dropped (the map is India-only) and everything is ranked
+ *  by name match + closeness to the current map view - like a real map app. */
+export async function searchPlaces(q: string, opts: {
+  deep?: boolean; signal?: AbortSignal; bias?: { lat: number; lon: number }
+} = {}): Promise<GeoResult[]> {
   const text = q.trim()
   if (text.length < 2) return []
+  const bias = opts.bias ?? ODISHA_CENTER
   const [local, remote, deep] = await Promise.all([
     api<GeoResult[]>(`/api/suggest?q=${encodeURIComponent(text)}`, { signal: opts.signal }).catch(() => []),
-    photonSearch(text, opts.signal),
+    photonSearch(text, bias, opts.signal),
     opts.deep
       ? api<GeoResult[]>(`/api/geocode?q=${encodeURIComponent(text)}`, { signal: opts.signal }).catch(() => [])
       : Promise.resolve([]),
   ])
-  const out: GeoResult[] = []
-  const dup = (r: GeoResult) => out.some((e) =>
+  const nq = text.toLowerCase()
+  const tokens = nq.split(/[^a-z0-9]+/).filter((t) => t.length >= 2)
+  const seen: GeoResult[] = []
+  const dup = (r: GeoResult) => seen.some((e) =>
     (Math.abs(e.lat - r.lat) < 0.01 && Math.abs(e.lon - r.lon) < 0.01) ||
     e.name.split(",")[0].trim().toLowerCase() === r.name.split(",")[0].trim().toLowerCase())
-  // real POI matches first (like Google), then the bundled gazetteer, then deep rows
   for (const r of [...remote, ...deep, ...local]) {
-    if (r && isFinite(r.lat) && isFinite(r.lon) && !dup(r)) {
-      out.push(r.kind ? r : { ...r, kind: LOCAL_KIND[r.type] ?? "Place" })
-      if (out.length >= 8) break
-    }
+    if (!r || !isFinite(r.lat) || !isFinite(r.lon)) continue
+    if (!inIndia(r.lat, r.lon)) continue                    // never suggest rows the map can't reach
+    if (dup(r)) continue
+    seen.push(r.kind ? r : { ...r, kind: LOCAL_KIND[r.type] ?? "Place" })
+    if (seen.length >= 24) break
   }
-  return out
+  const score = (r: GeoResult, idx: number) => {
+    const name = r.name.toLowerCase()
+    const head = name.split(",")[0].trim()
+    let s = -idx * 5
+    if (head === nq) s += 400
+    else if (tokens.length && tokens.every((t) => name.includes(t))) s += 220
+    else if (tokens.some((t) => name.includes(t))) s += 80
+    if (r.discom) s += 150                                  // inside Odisha
+    const km = distanceKm(r.lat, r.lon, bias.lat, bias.lon)
+    s += km < 50 ? 130 : km < 200 ? 90 : km < 600 ? 40 : 0   // near the map view
+    return s
+  }
+  return seen
+    .map((r, i) => ({ r, s: score(r, i) }))
+    .sort((a, b) => b.s - a.s)
+    .slice(0, 8)
+    .map((x) => x.r)
 }
