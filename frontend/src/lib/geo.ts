@@ -78,6 +78,15 @@ export const centroid = (ll: LatLng[]): LatLng => [
   ll.reduce((s, p) => s + p[1], 0) / ll.length,
 ]
 
+/** Global pixel coordinates of a lat/lon at zoom z (same maths as app/geo.py). */
+export function latlonToPx(lat: number, lon: number, z: number): [number, number] {
+  const n = 256 * 2 ** z
+  const x = ((lon + 180) / 360) * n
+  const s = Math.sin((lat * Math.PI) / 180)
+  const y = (0.5 - Math.log((1 + s) / (1 - s)) / (4 * Math.PI)) * n
+  return [x, y]
+}
+
 export function niceStep(v: number) {
   if (v <= 0) return 1
   const e = 10 ** Math.floor(Math.log10(v))

@@ -43,7 +43,7 @@ from .report import build_report_pdf, qr_svg, roof_thumbnail
 from .segment import RoofSegmenter, mask_to_polygon
 from .solar import assess_solar, odisha_state_subsidy, pm_surya_ghar_subsidy
 from .tariff import TARIFF_LABEL, monthly_bill, slab_table
-from .tiles import TileFetcher
+from .tiles import TileFetcher, decode_crop_b64
 
 state: dict = {}
 
@@ -79,6 +79,11 @@ class SegmentIn(BaseModel):
     points: List[SegPoint] = Field(min_length=1, max_length=20)
     zoom: int = Field(19, ge=12, le=23)
     engine: Literal["auto", "opencv"] = "auto"
+    # Optional browser-captured crop: the frontend draws the map tiles it already
+    # has and sends the image, so the roof AI works even when this server is offline.
+    image: Optional[str] = Field(None, max_length=2_500_000)   # base64 PNG/JPEG (or data URL)
+    origin: Optional[Tuple[int, int]] = None                  # global px (gx0, gy0) of the crop's top-left at zoom `z`
+    z: Optional[int] = Field(None, ge=12, le=23)              # zoom level of the supplied crop
 
 
 class AssessIn(BaseModel):
@@ -349,6 +354,23 @@ def _merge_rows(primary: list, extra: list, limit: int = 8) -> list:
     return out
 
 
+@app.get("/api/suggest")
+async def suggest(q: str = Query(..., min_length=2, max_length=200)):
+    """Instant type-ahead suggestions from the bundled Odisha data (PINs, towns,
+    districts, localities) - offline, never raises, capped small."""
+    q = q.strip()
+    out: list = []
+    pin = pincode.find_pin(q)
+    if pin:
+        hit = pincode.lookup(pin)
+        if hit:
+            out.append(_geo_row(hit["name"], hit["lat"], hit["lon"],
+                                "postcode" if hit["exact"] else "postcode_area"))
+    for name, lat, lon, typ in places.search(q, limit=8):
+        out.append(_geo_row(f"{name}, Odisha", lat, lon, typ))
+    return _merge_rows([], out, limit=8)
+
+
 @app.get("/api/geocode")
 async def geocode(q: str = Query(..., min_length=2, max_length=200)):
     # SuryaJal serves Odisha: bias (and limit) place search to the State.
@@ -449,16 +471,27 @@ async def reverse(lat: float = Query(..., ge=-85, le=85), lon: float = Query(...
 async def segment(req: SegmentIn):
     seg: RoofSegmenter = state["seg"]
     anchor = req.points[0]
-    crop = await state["tiles"].crop_around(anchor.lat, anchor.lon, req.zoom, SEG_CROP_PX)
-    if crop is None or crop["bad"] > 0.5:
-        raise HTTPException(503, "Satellite imagery is not available here (or you are offline). "
-                                 "Use ‘Draw manually’ instead.")
+    if req.image is not None:
+        # crop drawn by the browser from the tiles it already shows on the map
+        if req.origin is None or req.z is None:
+            raise HTTPException(422, "Send image, origin and z together.")
+        try:
+            arr = decode_crop_b64(req.image)
+        except ValueError:
+            raise HTTPException(422, "Could not read the map image sent by the browser.")
+        crop = {"img": arr, "z": req.z, "gx0": int(req.origin[0]), "gy0": int(req.origin[1]), "bad": 0.0}
+    else:
+        crop = await state["tiles"].crop_around(anchor.lat, anchor.lon, req.zoom, SEG_CROP_PX)
+        if crop is None or crop["bad"] > 0.5:
+            raise HTTPException(503, "Satellite imagery is not available here (or you are offline). "
+                                     "Use ‘Draw manually’ instead.")
     z, gx0, gy0 = crop["z"], crop["gx0"], crop["gy0"]
+    h, w = crop["img"].shape[:2]
     pts, labels = [], []
     for p_ in req.points:
         x, y = latlon_to_px(p_.lat, p_.lon, z)
         x, y = x - gx0, y - gy0
-        if 0 <= x < SEG_CROP_PX and 0 <= y < SEG_CROP_PX:
+        if 0 <= x < w and 0 <= y < h:
             pts.append((x, y))
             labels.append(p_.label)
     if not pts or labels[0] != 1:

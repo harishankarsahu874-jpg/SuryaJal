@@ -4,17 +4,17 @@ import "leaflet/dist/leaflet.css"
 import { AnimatePresence, motion } from "motion/react"
 import { toast } from "sonner"
 import {
-  ArrowRight, Check, Eraser, Loader2, Minus, PenLine, Plus, RotateCcw, Search, Sparkles, Undo2, X,
+  ArrowRight, Check, Eraser, Loader2, MapPin, Minus, PenLine, Plus, RotateCcw, Search, Sparkles, Undo2, X,
 } from "lucide-react"
 import { api, type LocationInfo, type SegmentResponse } from "@/lib/api"
-import { areaM2, ODISHA_CENTER, ODISHA_CITIES, ODISHA_ZOOM, type LatLng } from "@/lib/geo"
+import { searchPlaces, type GeoResult } from "@/lib/geosearch"
+import { areaM2, latlonToPx, ODISHA_CENTER, ODISHA_CITIES, ODISHA_ZOOM, type LatLng } from "@/lib/geo"
 import { EsriImagery, type ImageryFallbackEvent } from "@/lib/imagery"
 import { fmtIN, litres, sqft } from "@/lib/format"
 import { cn } from "@/lib/utils"
 import { useDashboard } from "./state"
 
 type SegPoint = { lat: number; lon: number; label: 0 | 1 }
-type GeoResult = { name: string; lat: number; lon: number; type: string; district?: string | null; discom?: string | null }
 
 const ESRI = "https://server.arcgisonline.com/ArcGIS/rest/services"
 const clamp = (v: number, a: number, b: number) => Math.min(b, Math.max(a, v))
@@ -54,6 +54,81 @@ async function ipLocate(): Promise<{ lat: number; lon: number; city: string | nu
       const hit = await s()
       if (hit) return hit
     } catch { /* try the next source */ }
+  }
+  return null
+}
+
+// ---------------------------------------------------- browser-side crop for the roof AI
+const SEG_CROP_PX = 512
+
+function loadTileImg(url: string): Promise<HTMLImageElement | null> {
+  return new Promise((resolve) => {
+    const img = new Image()
+    img.crossOrigin = "anonymous"
+    img.onload = () => resolve(img)
+    img.onerror = () => resolve(null)
+    img.src = url
+  })
+}
+
+/** Esri's grey "Map data not yet available" tile is flat - same idea as app/tiles.py. */
+function isPlaceholderTile(img: HTMLImageElement): boolean {
+  try {
+    const c = document.createElement("canvas")
+    c.width = 32; c.height = 32
+    const ctx = c.getContext("2d")
+    if (!ctx) return false
+    ctx.drawImage(img, 0, 0, 32, 32)
+    const d = ctx.getImageData(0, 0, 32, 32).data
+    let s = 0, s2 = 0
+    for (let i = 0; i < d.length; i += 4) {
+      const g = (d[i] * 299 + d[i + 1] * 587 + d[i + 2] * 114) / 1000
+      s += g; s2 += g * g
+    }
+    const n = d.length / 4
+    return Math.sqrt(Math.max(0, s2 / n - (s / n) ** 2)) < 12
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Draw the crop the roof AI needs from the browser's own tile access (the map is
+ * already showing these tiles), mirroring TileFetcher.crop_around in app/tiles.py:
+ * 512 px centered crop, stepping the zoom down while imagery is missing. Sending
+ * the image to /api/segment keeps tap-to-trace working even when the backend
+ * machine has no internet - only the user's browser needs it.
+ */
+async function captureCrop(lat: number, lon: number, z0: number):
+  Promise<{ image: string; z: number; gx0: number; gy0: number } | null> {
+  for (let z = Math.min(z0, 19); z >= 14 && z > Math.min(z0, 19) - 3; z--) {
+    const [gx, gy] = latlonToPx(lat, lon, z)
+    const gx0 = Math.floor(gx - SEG_CROP_PX / 2), gy0 = Math.floor(gy - SEG_CROP_PX / 2)
+    const tx0 = Math.floor(gx0 / 256), ty0 = Math.floor(gy0 / 256)
+    const tx1 = Math.floor((gx0 + SEG_CROP_PX - 1) / 256), ty1 = Math.floor((gy0 + SEG_CROP_PX - 1) / 256)
+    const canvas = document.createElement("canvas")
+    canvas.width = SEG_CROP_PX
+    canvas.height = SEG_CROP_PX
+    const ctx = canvas.getContext("2d")
+    if (!ctx) return null
+    ctx.fillStyle = "#282828"
+    ctx.fillRect(0, 0, SEG_CROP_PX, SEG_CROP_PX)
+    const jobs: { tx: number; ty: number }[] = []
+    for (let ty = ty0; ty <= ty1; ty++) for (let tx = tx0; tx <= tx1; tx++) jobs.push({ tx, ty })
+    const imgs = await Promise.all(jobs.map(({ tx, ty }) =>
+      loadTileImg(`${ESRI}/World_Imagery/MapServer/tile/${z}/${ty}/${tx}`)))
+    let bad = 0
+    jobs.forEach(({ tx, ty }, i) => {
+      const t = imgs[i]
+      if (!t || isPlaceholderTile(t)) { bad++; return }
+      ctx.drawImage(t, tx * 256 - gx0, ty * 256 - gy0)
+    })
+    if (bad / jobs.length > 0.25) continue          // imagery missing here: try one zoom out
+    try {
+      return { image: canvas.toDataURL("image/png"), z, gx0, gy0 }
+    } catch {
+      return null                                    // tiles without CORS: let the server fetch
+    }
   }
   return null
 }
@@ -275,7 +350,16 @@ export function MapPanel({ visible }: { visible: boolean }) {
     const zoom = clamp(Math.round(map.getZoom()), 17, 19)
     const t0 = performance.now()
     try {
-      const r = await api<SegmentResponse>("/api/segment", { body: { points: pts, zoom } })
+      // the browser draws the crop from the tiles it already has and sends it along,
+      // so the AI works even when the server itself is offline
+      const cap = await captureCrop(last.lat, last.lon, zoom)
+      const r = await api<SegmentResponse>("/api/segment", {
+        body: {
+          points: pts,
+          zoom,
+          ...(cap ? { image: cap.image, origin: [cap.gx0, cap.gy0], z: cap.z } : {}),
+        },
+      })
       if (!r.ok) {
         toast.warning(r.message ?? "No roof found there.")
         if (S.aiPoints.length > 1) S.aiPoints.pop()
@@ -606,26 +690,58 @@ function SearchBox({ onPick, onLatLon }: { onPick: (g: GeoResult) => void; onLat
   const [q, setQ] = useState("")
   const [results, setResults] = useState<GeoResult[]>([])
   const [busy, setBusy] = useState(false)
+  const [hi, setHi] = useState(-1)
   const boxRef = useRef<HTMLFormElement>(null)
 
   useEffect(() => {
-    const close = (e: MouseEvent) => { if (!boxRef.current?.contains(e.target as Node)) setResults([]) }
+    const close = (e: MouseEvent) => {
+      if (!boxRef.current?.contains(e.target as Node)) { setResults([]); setHi(-1) }
+    }
     document.addEventListener("click", close)
     return () => document.removeEventListener("click", close)
   }, [])
+
+  // live suggestions while typing (like Google Maps); stale answers are dropped
+  useEffect(() => {
+    const text = q.trim()
+    if (text.length < 2) return
+    const ctl = new AbortController()
+    const t = setTimeout(async () => {
+      setBusy(true)
+      try {
+        const rows = await searchPlaces(text, { signal: ctl.signal })
+        if (!ctl.signal.aborted) { setResults(rows); setHi(-1) }
+      } catch {
+        if (!ctl.signal.aborted) setResults([])
+      } finally {
+        if (!ctl.signal.aborted) setBusy(false)
+      }
+    }, 250)
+    return () => { clearTimeout(t); ctl.abort() }
+  }, [q])
+
+  const setQuery = (v: string) => {
+    setQ(v)
+    if (v.trim().length < 2) { setResults([]); setHi(-1) }
+  }
+
+  const pick = (g: GeoResult) => { setQ(""); setResults([]); setHi(-1); onPick(g) }
 
   async function submit(e: FormEvent) {
     e.preventDefault()
     const text = q.trim()
     if (!text) return
     const m = text.match(/^\s*(-?\d{1,2}(?:\.\d+)?)\s*[,\s]\s*(-?\d{1,3}(?:\.\d+)?)\s*$/)
-    if (m) { setResults([]); onLatLon(+m[1], +m[2]); return }
+    if (m) { setResults([]); setHi(-1); onLatLon(+m[1], +m[2]); return }
+    if (hi >= 0 && results[hi]) return void pick(results[hi])
+    if (results.length) return void pick(results[0])
+    // nothing yet (paste + instant Enter): run the deep search now
     setBusy(true)
     try {
-      const res = await api<GeoResult[]>(`/api/geocode?q=${encodeURIComponent(text)}`)
-      if (!res.length) toast.warning("No place found — try a nearby landmark, area or PIN code")
-      else if (res.length === 1) { setResults([]); onPick(res[0]) }
-      else setResults(res)
+      const rows = await searchPlaces(text, { deep: true })
+      if (!rows.length) toast.warning("No place found — try a nearby landmark, area or PIN code")
+      else if (rows.length === 1) pick(rows[0])
+      else { setResults(rows); setHi(-1) }
     } catch (err) {
       toast.error((err as Error).message)
     } finally {
@@ -637,10 +753,18 @@ function SearchBox({ onPick, onLatLon }: { onPick: (g: GeoResult) => void; onLat
     <form ref={boxRef} onSubmit={submit} className="relative w-full" role="search" autoComplete="off">
       <div className="flex h-12 items-center gap-2 rounded-2xl border bg-card/95 pr-1.5 pl-3.5 shadow-lg backdrop-blur focus-within:ring-3 focus-within:ring-ring/40">
         <Search className="size-[18px] shrink-0 text-muted-foreground" />
-        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search a town, area or PIN code in Odisha…"
-          aria-label="Search a place" className="h-full min-w-0 flex-1 bg-transparent text-[15px] outline-none placeholder:text-muted-foreground" />
+        <input value={q} onChange={(e) => setQuery(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "ArrowDown") { e.preventDefault(); setHi((h) => Math.min(h + 1, results.length - 1)) }
+            else if (e.key === "ArrowUp") { e.preventDefault(); setHi((h) => Math.max(h - 1, -1)) }
+            else if (e.key === "Escape") { setResults([]); setHi(-1) }
+          }}
+          placeholder="Search a place, landmark or PIN code in Odisha…"
+          aria-label="Search a place" role="combobox" aria-expanded={results.length > 0}
+          aria-controls="sj-place-list" aria-autocomplete="list"
+          className="h-full min-w-0 flex-1 bg-transparent text-[15px] outline-none placeholder:text-muted-foreground" />
         {q && (
-          <button type="button" onClick={() => { setQ(""); setResults([]) }} className="grid size-8 place-items-center rounded-lg text-muted-foreground hover:bg-secondary" aria-label="Clear search">
+          <button type="button" onClick={() => { setQ(""); setResults([]); setHi(-1) }} className="grid size-8 place-items-center rounded-lg text-muted-foreground hover:bg-secondary" aria-label="Clear search">
             <X className="size-4" />
           </button>
         )}
@@ -649,23 +773,37 @@ function SearchBox({ onPick, onLatLon }: { onPick: (g: GeoResult) => void; onLat
         </button>
       </div>
       <AnimatePresence>
-        {results.length > 1 && (
-          <motion.ul initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }}
+        {(results.length > 0 || (busy && q.trim().length >= 2)) && (
+          <motion.ul id="sj-place-list" role="listbox" initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }}
             className="absolute inset-x-0 top-[3.4rem] max-h-80 overflow-auto rounded-2xl border bg-card p-1.5 shadow-2xl">
             {results.map((r, i) => {
               const [head, ...rest] = r.name.split(", ")
+              const sub = r.district
+                ? `${r.kind ?? "Place"} · ${r.district} district`
+                : `${r.kind ?? "Place"}${rest.length ? " · " : ""}${rest.slice(0, 3).join(", ")}`
               return (
-                <li key={i}>
-                  <button type="button" onClick={() => { setResults([]); onPick(r) }}
-                    className="flex w-full flex-col items-start rounded-xl px-3 py-2 text-left hover:bg-secondary">
-                    <span className="text-sm font-semibold">{head}</span>
-                    <span className="line-clamp-1 text-xs text-muted-foreground">
-                      {r.district ? `${r.district} district · ${r.discom} · ` : ""}{rest.slice(0, 3).join(", ")}
+                <li key={`${r.lat},${r.lon},${i}`} role="option" aria-selected={i === hi}>
+                  <button type="button" onClick={() => pick(r)} onMouseEnter={() => setHi(i)}
+                    className={cn(
+                      "flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-left transition-colors",
+                      i === hi ? "bg-secondary" : "hover:bg-secondary/60",
+                    )}>
+                    <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-secondary text-muted-foreground">
+                      <MapPin className="size-4" />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-semibold">{head}</span>
+                      <span className="block truncate text-xs text-muted-foreground">{sub}</span>
                     </span>
                   </button>
                 </li>
               )
             })}
+            {busy && results.length === 0 && (
+              <li className="flex items-center gap-2 px-3 py-2 text-sm text-muted-foreground">
+                <Loader2 className="size-4 animate-spin" /> Searching…
+              </li>
+            )}
           </motion.ul>
         )}
       </AnimatePresence>

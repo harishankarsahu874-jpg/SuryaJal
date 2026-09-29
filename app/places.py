@@ -126,7 +126,10 @@ def search(q: str, limit: int = 6) -> List[Tuple[str, float, float, str]]:
         return []
     if nq.isdigit():                     # PINs are handled by pincode.lookup()
         return []
-    tokens = [t for t in nq.split(" ") if len(t) >= 2 and not t.isdigit()]
+    # split on punctuation too: "nist university,berhampur" -> nist / university / berhampur
+    tokens = [t for t in _WORDS.findall(nq) if len(t) >= 2 and not t.isdigit()]
+    if not tokens:
+        tokens = [t for t in nq.split(" ") if len(t) >= 2 and not t.isdigit()]
     if not tokens:
         return []
 

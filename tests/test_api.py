@@ -49,6 +49,15 @@ def test_qr_svg(client):
     assert r.status_code == 200 and "<svg" in r.text
 
 
+def test_suggest_offline_typeahead(client, monkeypatch):
+    """Instant suggestions from the bundled data - no internet, no errors."""
+    r = client.get("/api/suggest", params={"q": "Cuttack"}).json()
+    assert any("Cuttack" in x["name"] for x in r)
+    r = client.get("/api/suggest", params={"q": "751007"}).json()
+    assert "Sahid Nagar" in r[0]["name"]
+    assert client.get("/api/suggest", params={"q": "zzz"}).json() == []
+
+
 def test_geocode_pincode_offline(client, monkeypatch):
     import app.main as m
 
@@ -77,6 +86,9 @@ def test_geocode_place_names_offline(client, monkeypatch):
     r = client.get("/api/geocode", params={"q": "Patia Bhubaneswar"}).json()
     assert "Patia" in r[0]["name"]
     r = client.get("/api/geocode", params={"q": "Brahmapur"}).json()   # alias spelling
+    assert "Berhampur" in r[0]["name"]
+    # landmark-ish free text with punctuation still falls back to the right town
+    r = client.get("/api/geocode", params={"q": "nist university,berhampur"}).json()
     assert "Berhampur" in r[0]["name"]
 
 
@@ -126,3 +138,49 @@ def test_geocode_skips_malformed_upstream_entries(client, monkeypatch):
     # malformed upstream rows are dropped; the offline gazetteer still answers
     assert rows and all(isinstance(x["lat"], float) and isinstance(x["lon"], float) for x in rows)
     assert any("Cuttack" in x["name"] for x in rows)
+
+
+def _synthetic_crop_b64():
+    """A satellite-looking 512x512 scene with a clear roof in the middle."""
+    import base64
+    import io
+
+    import cv2
+    import numpy as np
+    from PIL import Image
+
+    rng = np.random.default_rng(0)
+    img = (rng.normal(0, 9, (512, 512, 3)) + np.array([70, 95, 60])).clip(0, 255).astype(np.uint8)
+    cv2.rectangle(img, (180, 200), (320, 300), (200, 110, 80), -1)     # terracotta roof
+    buf = io.BytesIO()
+    Image.fromarray(img).save(buf, format="PNG")
+    return base64.b64encode(buf.getvalue()).decode()
+
+
+def test_segment_with_browser_image(client):
+    """The frontend can send the map crop itself - the AI works with zero server internet."""
+    from app.geo import latlon_to_px
+
+    b64 = _synthetic_crop_b64()
+    gx, gy = latlon_to_px(20.2961, 85.8245, 18)
+    gx0, gy0 = int(gx - 256), int(gy - 256)      # 512 px crop centered on the tap
+    r = client.post("/api/segment", json={
+        "points": [{"lat": 20.2961, "lon": 85.8245, "label": 1}],
+        "zoom": 18, "image": b64, "origin": [gx0, gy0], "z": 18,
+    })
+    assert r.status_code == 200
+    d = r.json()
+    assert d["ok"] is True and len(d["polygon"]) >= 3 and d["area_m2"] > 0
+
+
+def test_segment_image_needs_full_geometry(client):
+    r = client.post("/api/segment", json={
+        "points": [{"lat": 20.2961, "lon": 85.8245, "label": 1}],
+        "zoom": 18, "image": _synthetic_crop_b64(),       # missing origin + z
+    })
+    assert r.status_code == 422
+    r = client.post("/api/segment", json={
+        "points": [{"lat": 20.2961, "lon": 85.8245, "label": 1}],
+        "zoom": 18, "image": "!!not-base64!!", "origin": [0, 0], "z": 18,
+    })
+    assert r.status_code == 422
