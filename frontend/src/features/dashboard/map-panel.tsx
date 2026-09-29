@@ -8,7 +8,8 @@ import {
 } from "lucide-react"
 import { api, type LocationInfo, type SegmentResponse } from "@/lib/api"
 import { searchPlaces, type GeoResult } from "@/lib/geosearch"
-import { areaM2, latlonToPx, ODISHA_CENTER, ODISHA_CITIES, ODISHA_ZOOM, type LatLng } from "@/lib/geo"
+import { captureCrop } from "@/lib/mapcrop"
+import { areaM2, INDIA_BOUNDS, inIndia, ODISHA_CENTER, ODISHA_CITIES, ODISHA_ZOOM, type LatLng } from "@/lib/geo"
 import { EsriImagery, type ImageryFallbackEvent } from "@/lib/imagery"
 import { fmtIN, litres, sqft } from "@/lib/format"
 import { cn } from "@/lib/utils"
@@ -32,105 +33,64 @@ function zoomFor(type: string) {
 
 /** Approximate position from the browser's network - works even when GPS is
  * blocked (e.g. embedded previews without the geolocation permission). */
-async function ipLocate(): Promise<{ lat: number; lon: number; city: string | null } | null> {
-  const sources: (() => Promise<{ lat: number; lon: number; city: string | null } | null>)[] = [
+async function ipLocate(): Promise<{ lat: number; lon: number; city: string | null; accuracyKm: number } | null> {
+  type Fix = { lat: number; lon: number; city: string | null; accuracyKm: number }
+  const sources: (() => Promise<Fix | null>)[] = [
     async () => {
       const r = await fetch("https://ipwho.is/", { signal: AbortSignal.timeout(5000) })
       const j = await r.json() as { success?: boolean; latitude?: number; longitude?: number; city?: string }
       const lat = Number(j?.latitude), lon = Number(j?.longitude)
       return j?.success !== false && isFinite(lat) && isFinite(lon)
-        ? { lat, lon, city: j?.city ?? null } : null
+        ? { lat, lon, city: j?.city ?? null, accuracyKm: 25 } : null
     },
     async () => {
       const r = await fetch("https://ipapi.co/json/", { signal: AbortSignal.timeout(5000) })
       const j = await r.json() as { error?: boolean; latitude?: number; longitude?: number; city?: string }
       const lat = Number(j?.latitude), lon = Number(j?.longitude)
       return !j?.error && isFinite(lat) && isFinite(lon)
-        ? { lat, lon, city: j?.city ?? null } : null
+        ? { lat, lon, city: j?.city ?? null, accuracyKm: 15 } : null
+    },
+    async () => {
+      const r = await fetch("https://get.geojs.io/v1/ip/geo.json", { signal: AbortSignal.timeout(5000) })
+      const j = await r.json() as { latitude?: number; longitude?: number; city?: string }
+      const lat = Number(j?.latitude), lon = Number(j?.longitude)
+      return isFinite(lat) && isFinite(lon)
+        ? { lat, lon, city: j?.city ?? null, accuracyKm: 25 } : null
     },
   ]
-  for (const s of sources) {
-    try {
-      const hit = await s()
-      if (hit) return hit
-    } catch { /* try the next source */ }
-  }
-  return null
-}
-
-// ---------------------------------------------------- browser-side crop for the roof AI
-const SEG_CROP_PX = 512
-
-function loadTileImg(url: string): Promise<HTMLImageElement | null> {
-  return new Promise((resolve) => {
-    const img = new Image()
-    img.crossOrigin = "anonymous"
-    img.onload = () => resolve(img)
-    img.onerror = () => resolve(null)
-    img.src = url
-  })
-}
-
-/** Esri's grey "Map data not yet available" tile is flat - same idea as app/tiles.py. */
-function isPlaceholderTile(img: HTMLImageElement): boolean {
-  try {
-    const c = document.createElement("canvas")
-    c.width = 32; c.height = 32
-    const ctx = c.getContext("2d")
-    if (!ctx) return false
-    ctx.drawImage(img, 0, 0, 32, 32)
-    const d = ctx.getImageData(0, 0, 32, 32).data
-    let s = 0, s2 = 0
-    for (let i = 0; i < d.length; i += 4) {
-      const g = (d[i] * 299 + d[i + 1] * 587 + d[i + 2] * 114) / 1000
-      s += g; s2 += g * g
-    }
-    const n = d.length / 4
-    return Math.sqrt(Math.max(0, s2 / n - (s / n) ** 2)) < 12
-  } catch {
-    return false
-  }
-}
-
-/**
- * Draw the crop the roof AI needs from the browser's own tile access (the map is
- * already showing these tiles), mirroring TileFetcher.crop_around in app/tiles.py:
- * 512 px centered crop, stepping the zoom down while imagery is missing. Sending
- * the image to /api/segment keeps tap-to-trace working even when the backend
- * machine has no internet - only the user's browser needs it.
- */
-async function captureCrop(lat: number, lon: number, z0: number):
-  Promise<{ image: string; z: number; gx0: number; gy0: number } | null> {
-  for (let z = Math.min(z0, 19); z >= 14 && z > Math.min(z0, 19) - 3; z--) {
-    const [gx, gy] = latlonToPx(lat, lon, z)
-    const gx0 = Math.floor(gx - SEG_CROP_PX / 2), gy0 = Math.floor(gy - SEG_CROP_PX / 2)
-    const tx0 = Math.floor(gx0 / 256), ty0 = Math.floor(gy0 / 256)
-    const tx1 = Math.floor((gx0 + SEG_CROP_PX - 1) / 256), ty1 = Math.floor((gy0 + SEG_CROP_PX - 1) / 256)
-    const canvas = document.createElement("canvas")
-    canvas.width = SEG_CROP_PX
-    canvas.height = SEG_CROP_PX
-    const ctx = canvas.getContext("2d")
-    if (!ctx) return null
-    ctx.fillStyle = "#282828"
-    ctx.fillRect(0, 0, SEG_CROP_PX, SEG_CROP_PX)
-    const jobs: { tx: number; ty: number }[] = []
-    for (let ty = ty0; ty <= ty1; ty++) for (let tx = tx0; tx <= tx1; tx++) jobs.push({ tx, ty })
-    const imgs = await Promise.all(jobs.map(({ tx, ty }) =>
-      loadTileImg(`${ESRI}/World_Imagery/MapServer/tile/${z}/${ty}/${tx}`)))
-    let bad = 0
-    jobs.forEach(({ tx, ty }, i) => {
-      const t = imgs[i]
-      if (!t || isPlaceholderTile(t)) { bad++; return }
-      ctx.drawImage(t, tx * 256 - gx0, ty * 256 - gy0)
+  // ask all three at once - a bad/VPN answer outside India is dropped, not flown to
+  const settled = await Promise.all(sources.map((s) => s().catch(() => null)))
+  const ok = settled
+    .filter((f): f is Fix => !!f && inIndia(f.lat, f.lon) && !(Math.abs(f.lat) < 0.5 && Math.abs(f.lon) < 0.5))
+  if (!ok.length) return null
+  // majority vote: providers that agree within ~150 km form a cluster; IPs from
+  // mobile/CGNAT often geolocate to the ISP's registry city, so consensus beats
+  // blindly trusting one database
+  const clusters: Fix[][] = []
+  for (const f of ok) {
+    const hit = clusters.find((c) => {
+      const ref = c[0]
+      const dx = (f.lon - ref.lon) * Math.cos((f.lat * Math.PI) / 180) * 111
+      const dy = (f.lat - ref.lat) * 111
+      return Math.hypot(dx, dy) < 150
     })
-    if (bad / jobs.length > 0.25) continue          // imagery missing here: try one zoom out
-    try {
-      return { image: canvas.toDataURL("image/png"), z, gx0, gy0 }
-    } catch {
-      return null                                    // tiles without CORS: let the server fetch
-    }
+    if (hit) hit.push(f)
+    else clusters.push([f])
   }
-  return null
+  clusters.sort((a, b) =>
+    b.length - a.length ||
+    Math.min(...a.map((f) => f.accuracyKm)) - Math.min(...b.map((f) => f.accuracyKm)))
+  return clusters[0].slice().sort((x, y) => x.accuracyKm - y.accuracyKm)[0]
+}
+
+/** Zoom that matches how precise a fix actually is (never pretend an IP is a rooftop). */
+function zoomForAccuracy(m: number) {
+  if (m < 100) return 18
+  if (m < 500) return 16
+  if (m < 2000) return 15
+  if (m < 10000) return 14
+  if (m < 40000) return 13
+  return 11
 }
 
 export function MapPanel({ visible }: { visible: boolean }) {
@@ -144,7 +104,7 @@ export function MapPanel({ visible }: { visible: boolean }) {
   const mapRef = useRef<L.Map | null>(null)
   const layers = useRef<{
     roof: L.Polygon; panels: L.LayerGroup; handles: L.LayerGroup; prompts: L.LayerGroup; draw: L.LayerGroup
-    tip: L.Tooltip; rubber: L.Polyline | null; pulse: L.Marker | null; me: L.Marker | null
+    tip: L.Tooltip; rubber: L.Polyline | null; pulse: L.Marker | null; me: L.Marker | null; meC: L.Circle | null
   } | null>(null)
   // interaction state lives in a ref (Leaflet handlers are registered once) + a tick to re-render the UI
   const S = useRef({ mode: "ai" as "ai" | "draw", busy: false, aiPoints: [] as SegPoint[], refine: null as 0 | 1 | null,
@@ -165,8 +125,12 @@ export function MapPanel({ visible }: { visible: boolean }) {
   // ------------------------------------------------------------ map setup (once)
   useEffect(() => {
     if (!elRef.current || mapRef.current) return
-    const map = L.map(elRef.current, { zoomControl: false, maxZoom: 21, minZoom: 3, worldCopyJump: true })
-      .setView(ODISHA_CENTER, ODISHA_ZOOM)          // Bhubaneswar, Odisha
+    const map = L.map(elRef.current, {
+      zoomControl: false, maxZoom: 21, minZoom: 5,
+      // India only - SuryaJal is built for Indian (Odisha-first) roofs, and a
+      // full-world view helps nobody
+      maxBounds: INDIA_BOUNDS, maxBoundsViscosity: 1.0,
+    }).setView(ODISHA_CENTER, ODISHA_ZOOM)          // Bhubaneswar, Odisha
     mapRef.current = map
     // Esri has no z19 close-ups in many Odisha towns (it answers with a grey "Map data not yet
     // available" tile). EsriImagery detects that and shows the nearest zoom that has a photo.
@@ -196,7 +160,7 @@ export function MapPanel({ visible }: { visible: boolean }) {
       prompts: L.layerGroup().addTo(map),
       draw: L.layerGroup().addTo(map),
       tip: L.tooltip({ permanent: true, direction: "top", className: "sj-area-tip", offset: [0, -8], interactive: false }),
-      rubber: null, pulse: null, me: null,
+      rubber: null, pulse: null, me: null, meC: null,
     }
 
     map.on("zoomend", () => {
@@ -485,42 +449,59 @@ export function MapPanel({ visible }: { visible: boolean }) {
     if (!map || !ly) return
     toast("Finding you…")
 
-    const arrived = (lat: number, lon: number, opts: { approx?: boolean; accuracy?: number; city?: string | null }) => {
-      map.flyTo([lat, lon], opts.approx ? 13 : 19, { duration: 1.2 })
+    const arrived = (lat: number, lon: number, opts: { approx?: boolean; accuracy: number; city?: string | null }) => {
+      if (!inIndia(lat, lon)) {
+        toast.warning("We could not place you on the map in India — search your area or PIN code above instead.")
+        return
+      }
+      const zoom = opts.approx ? zoomForAccuracy(opts.accuracy) : 19
+      map.flyTo([lat, lon], zoom, { duration: 1.2 })
       if (ly.me) ly.me.remove()
+      if (ly.meC) ly.meC.remove()
+      // honest accuracy circle: GPS = metres, IP fix = kilometres
+      const radius = Math.min(opts.accuracy, opts.approx ? 50000 : 2000)
+      ly.meC = L.circle([lat, lon], {
+        radius, color: "#38BDF8", weight: 1.5, fillColor: "#38BDF8", fillOpacity: 0.12, interactive: false,
+      }).addTo(map)
       ly.me = L.marker([lat, lon], { icon: divIcon("sj-me"), interactive: false }).addTo(map)
       // tell the user which district and which Odisha DISCOM serves this spot
       api<LocationInfo>(`/api/odisha/locate?lat=${lat.toFixed(5)}&lon=${lon.toFixed(5)}`)
         .then((l) => {
+          const acc = opts.approx
+            ? `±${opts.accuracy >= 1000 ? `${Math.round(opts.accuracy / 1000)} km` : `${Math.round(opts.accuracy)} m`}`
+            : `±${Math.round(opts.accuracy)} m`
+          const note = opts.approx
+            ? `Approximate location${opts.city ? ` (${opts.city})` : ""} ${acc} from your internet — it can be ` +
+              "far off. Zoom in or search to your house."
+            : `You are here (${acc}).`
           if (!l.in_odisha) {
-            toast.warning("SuryaJal is built for Odisha — tariffs, subsidies and rainwater rules " +
-              "are Odisha's. You can still explore, but the numbers won't apply here.")
+            toast.warning(`${note} SuryaJal is built for Odisha — tariffs, subsidies and rainwater ` +
+              "rules won't apply at this spot.", { duration: 9000 })
             return
           }
           const where = `${l.district} district, ${l.discom}`
-          if (opts.approx) {
-            toast.success(`Approximate location${opts.city ? ` (${opts.city})` : ""} — ${where}. ` +
-              "Zoom in to your house and tap its roof!")
-          } else {
-            toast.success(`You are here (±${Math.round(opts.accuracy ?? 30)} m) — ${where}. Now tap your roof!`)
-          }
+          toast.success(`${note} ${where} — now tap your roof!`)
         })
         .catch(() => toast.success(opts.approx
           ? "Approximate location found — zoom in to your house and tap its roof!"
-          : `You are here (±${Math.round(opts.accuracy ?? 30)} m). Now tap your roof!`))
+          : `You are here (±${Math.round(opts.accuracy)} m). Now tap your roof!`))
     }
 
     // GPS blocked (common inside embedded previews) or denied -> ask the network instead
     const fallback = async () => {
       const hit = await ipLocate()
-      if (hit) return void arrived(hit.lat, hit.lon, { approx: true, city: hit.city })
+      if (hit) return void arrived(hit.lat, hit.lon, { approx: true, accuracy: hit.accuracyKm * 1000, city: hit.city })
       toast.warning("Location is off or blocked — search your area or PIN code above instead. " +
         "(Inside an embedded preview, open the app in its own tab to allow location.)")
     }
 
     if (!navigator.geolocation) return void fallback()
     navigator.geolocation.getCurrentPosition(
-      (pos) => arrived(pos.coords.latitude, pos.coords.longitude, { accuracy: pos.coords.accuracy }),
+      (pos) => {
+        const { latitude: lat, longitude: lon, accuracy } = pos.coords
+        if (!isFinite(lat) || !isFinite(lon) || (Math.abs(lat) < 0.5 && Math.abs(lon) < 0.5)) return void fallback()
+        arrived(lat, lon, { accuracy: Math.max(5, accuracy || 30) })
+      },
       () => void fallback(),
       { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 },
     )

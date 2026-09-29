@@ -136,8 +136,8 @@ class TileFetcher:
                 side = int(side)
                 gx0, gy0 = int(cx - side / 2), int(cy - side / 2)
                 img, bad = await self.crop(z, gx0, gy0, side, side)
-                if bad > 0.25 and z > 16:
-                    continue
+                if bad > 0.25:
+                    continue     # imagery missing here: try one zoom out (never ship a black crop)
                 return {"img": img, "z": z, "gx0": gx0, "gy0": gy0, "bad": bad}
         return None
 

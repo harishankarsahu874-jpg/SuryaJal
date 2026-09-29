@@ -87,6 +87,11 @@ export function latlonToPx(lat: number, lon: number, z: number): [number, number
   return [x, y]
 }
 
+/** India (with a small margin): the map never leaves it. */
+export const INDIA_BOUNDS: [[number, number], [number, number]] = [[6.0, 67.5], [37.5, 98.0]]
+export const inIndia = (lat: number, lon: number) =>
+  lat >= 6.0 && lat <= 37.5 && lon >= 67.5 && lon <= 98.0
+
 export function niceStep(v: number) {
   if (v <= 0) return 1
   const e = 10 ** Math.floor(Math.log10(v))

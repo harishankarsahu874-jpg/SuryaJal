@@ -184,3 +184,21 @@ def test_segment_image_needs_full_geometry(client):
         "zoom": 18, "image": "!!not-base64!!", "origin": [0, 0], "z": 18,
     })
     assert r.status_code == 422
+
+
+def test_report_post_with_browser_image(client):
+    """POST /r accepts the browser-captured crop - the PDF keeps its imagery offline."""
+    from urllib.parse import urlencode
+
+    from app.geo import encode_polyline
+
+    q = {"p": encode_polyline([tuple(p) for p in ROOF]), "u": "300", "f": "4",
+         "rt": "rcc", "uf": "70", "a": "Test roof", "m": "manual"}
+    r = client.post("/r", json={"query": urlencode({**q, "dl": "1"}),
+                                "image": _synthetic_crop_b64(), "origin": [0, 0], "z": 18})
+    assert r.status_code == 200 and r.headers["content-type"] == "application/pdf"
+    assert r.content[:5] == b"%PDF-" and len(r.content) > 20000
+    # garbage image is rejected, not silently ignored
+    r = client.post("/r", json={"query": urlencode(q), "image": "!!not-base64!!",
+                                "origin": [0, 0], "z": 18})
+    assert r.status_code == 422

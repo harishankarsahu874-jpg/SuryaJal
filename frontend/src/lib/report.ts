@@ -1,5 +1,7 @@
 import { useCallback, useRef, useState } from "react"
 import { toast } from "sonner"
+import { decodePolyline } from "@/lib/geo"
+import { capturePolyCrop } from "@/lib/mapcrop"
 
 /**
  * Report download + open helpers that keep working everywhere:
@@ -10,8 +12,34 @@ import { toast } from "sonner"
  *  - phones (blob downloads land in the notification shade / Downloads).
  */
 
+/** The PDF's satellite picture is drawn from the tiles this browser already has,
+ *  so the report keeps its imagery even when the server has no internet. */
+async function browserCrop(query: string): Promise<Record<string, unknown> | null> {
+  try {
+    const p = new URLSearchParams(query).get("p")
+    const poly = p ? decodePolyline(p) : []
+    if (poly.length < 3) return null
+    const cap = await capturePolyCrop(poly, 640)
+    if (!cap) return null
+    return { image: cap.canvas.toDataURL("image/png"), origin: [cap.gx0, cap.gy0], z: cap.z }
+  } catch {
+    return null
+  }
+}
+
 async function fetchReportPdf(query: string): Promise<{ blob: Blob; name: string }> {
-  const res = await fetch(`/r?${query}&dl=1`, { headers: { Accept: "application/pdf" } })
+  const accept = { Accept: "application/pdf" }
+  // 1) POST with the browser-captured crop (POST /r added in 2.1; falls back below)
+  const crop = await browserCrop(query)
+  let res = await fetch("/r", {
+    method: "POST",
+    headers: { ...accept, "Content-Type": "application/json" },
+    body: JSON.stringify({ query: `${query}&dl=1`, ...(crop ?? {}) }),
+  }).catch(() => null)
+  // 2) classic GET (share-link path) — works on older servers too
+  if (!res || res.status === 404 || res.status === 405) {
+    res = await fetch(`/r?${query}&dl=1`, { headers: accept })
+  }
   if (!res.ok) {
     let msg = `Could not build the report (HTTP ${res.status})`
     try {

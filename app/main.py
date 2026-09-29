@@ -562,16 +562,24 @@ def _assess_from_query(q) -> Tuple[AssessIn, dict]:
     return req, meta
 
 
-@app.get("/r")
-@app.get("/api/report")
-async def report(request: Request):
-    q = dict(request.query_params)
+class ReportIn(BaseModel):
+    """Same report as GET /r, but the browser can attach the satellite crop it already
+    has (image + origin + z, like /api/segment) - so the PDF keeps its imagery even
+    when this server has no internet of its own."""
+    query: str = Field(max_length=12000)                      # the usual report query string
+    image: Optional[str] = Field(None, max_length=2_500_000)  # base64 PNG/JPEG (or data URL)
+    origin: Optional[Tuple[int, int]] = None
+    z: Optional[int] = Field(None, ge=12, le=23)
+
+
+async def _report_response(q: dict, request: Request, crop) -> Response:
     req, meta = _assess_from_query(q)
     a = await run_assessment(req)
-    try:
-        crop = await state["tiles"].crop_bbox(a["polygon"])
-    except Exception:
-        crop = None
+    if crop is None:
+        try:
+            crop = await state["tiles"].crop_bbox(a["polygon"])
+        except Exception:
+            crop = None
     thumb = await run_in_threadpool(roof_thumbnail, crop, a["polygon"], a["layout"]["panels"], 900)
     share_q = {k: v for k, v in q.items() if k not in ("dl",)}
     share_url = f"{_public_base(request)}/app?{httpx.QueryParams(share_q)}"
@@ -588,6 +596,28 @@ async def report(request: Request):
     return Response(pdf, media_type="application/pdf", headers={
         "Content-Disposition": f'{disp}; filename="SuryaJal_Green_Roof_Report_{a["report_id"]}.pdf"',
         "Cache-Control": "no-store"})
+
+
+@app.get("/r")
+@app.get("/api/report")
+async def report(request: Request):
+    return await _report_response(dict(request.query_params), request, None)
+
+
+@app.post("/r")
+@app.post("/api/report")
+async def report_post(req: ReportIn, request: Request):
+    q = dict(parse_qsl(req.query))
+    crop = None
+    if req.image is not None:
+        if req.origin is None or req.z is None:
+            raise HTTPException(422, "Send image, origin and z together.")
+        try:
+            arr = decode_crop_b64(req.image)
+        except ValueError:
+            raise HTTPException(422, "Could not read the map image sent by the browser.")
+        crop = {"img": arr, "z": req.z, "gx0": int(req.origin[0]), "gy0": int(req.origin[1]), "bad": 0.0}
+    return await _report_response(q, request, crop)
 
 
 @app.get("/api/qr.svg")
