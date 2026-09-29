@@ -59,6 +59,39 @@ def test_geocode_pincode_offline(client, monkeypatch):
     assert r[0]["district"] and "Sahid Nagar" in r[0]["name"]
     r = client.get("/api/geocode", params={"q": "768 004"}).json()   # district-level fallback
     assert "Sambalpur" in r[0]["name"]
+    r = client.get("/api/geocode", params={"q": "751-007"}).json()   # hyphen separator
+    assert "Sahid Nagar" in r[0]["name"]
+
+
+def test_geocode_place_names_offline(client, monkeypatch):
+    """Town / area names resolve from the bundled Odisha gazetteer - no internet needed."""
+    import app.main as m
+
+    async def boom(*a, **k):
+        raise m.httpx.ConnectError("offline")
+    monkeypatch.setattr(m, "_nominatim", boom)
+    r = client.get("/api/geocode", params={"q": "Cuttack"}).json()
+    assert "Cuttack" in r[0]["name"] and r[0]["district"]
+    r = client.get("/api/geocode", params={"q": "Sahid Nagar"}).json()
+    assert "Sahid Nagar" in r[0]["name"]
+    r = client.get("/api/geocode", params={"q": "Patia Bhubaneswar"}).json()
+    assert "Patia" in r[0]["name"]
+    r = client.get("/api/geocode", params={"q": "Brahmapur"}).json()   # alias spelling
+    assert "Berhampur" in r[0]["name"]
+
+
+def test_geocode_outside_odisha_without_internet(client, monkeypatch):
+    import app.main as m
+
+    async def boom(*a, **k):
+        raise m.httpx.ConnectError("offline")
+    monkeypatch.setattr(m, "_nominatim", boom)
+    r = client.get("/api/geocode", params={"q": "560001"})
+    assert r.status_code == 404                       # Bangalore PIN: say why, don't fake it
+    assert "Odisha" in r.json()["detail"]
+    r = client.get("/api/geocode", params={"q": "zzz-not-a-real-place"})
+    assert r.status_code == 503
+    assert "internet" in r.json()["detail"]
 
 
 def test_geocode_handles_bad_upstream_response(client, monkeypatch):
@@ -74,9 +107,10 @@ def test_geocode_handles_bad_upstream_response(client, monkeypatch):
     assert r.status_code == 200
     assert "Sahid Nagar" in r.json()[0]["name"]
 
+    # ...and free-text search keeps working through the bundled Odisha gazetteer.
     r = client.get("/api/geocode", params={"q": "Cuttack"})
-    assert r.status_code == 503
-    assert "needs internet" in r.json()["detail"]
+    assert r.status_code == 200
+    assert "Cuttack" in r.json()[0]["name"]
 
 
 def test_geocode_skips_malformed_upstream_entries(client, monkeypatch):
@@ -88,4 +122,7 @@ def test_geocode_skips_malformed_upstream_entries(client, monkeypatch):
     monkeypatch.setattr(m, "_nominatim", malformed)
     r = client.get("/api/geocode", params={"q": "Cuttack"})
     assert r.status_code == 200
-    assert r.json() == []
+    rows = r.json()
+    # malformed upstream rows are dropped; the offline gazetteer still answers
+    assert rows and all(isinstance(x["lat"], float) and isinstance(x["lon"], float) for x in rows)
+    assert any("Cuttack" in x["name"] for x in rows)

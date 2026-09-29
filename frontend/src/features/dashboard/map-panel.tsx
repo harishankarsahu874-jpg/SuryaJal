@@ -30,6 +30,34 @@ function zoomFor(type: string) {
   return 17
 }
 
+/** Approximate position from the browser's network - works even when GPS is
+ * blocked (e.g. embedded previews without the geolocation permission). */
+async function ipLocate(): Promise<{ lat: number; lon: number; city: string | null } | null> {
+  const sources: (() => Promise<{ lat: number; lon: number; city: string | null } | null>)[] = [
+    async () => {
+      const r = await fetch("https://ipwho.is/", { signal: AbortSignal.timeout(5000) })
+      const j = await r.json() as { success?: boolean; latitude?: number; longitude?: number; city?: string }
+      const lat = Number(j?.latitude), lon = Number(j?.longitude)
+      return j?.success !== false && isFinite(lat) && isFinite(lon)
+        ? { lat, lon, city: j?.city ?? null } : null
+    },
+    async () => {
+      const r = await fetch("https://ipapi.co/json/", { signal: AbortSignal.timeout(5000) })
+      const j = await r.json() as { error?: boolean; latitude?: number; longitude?: number; city?: string }
+      const lat = Number(j?.latitude), lon = Number(j?.longitude)
+      return !j?.error && isFinite(lat) && isFinite(lon)
+        ? { lat, lon, city: j?.city ?? null } : null
+    },
+  ]
+  for (const s of sources) {
+    try {
+      const hit = await s()
+      if (hit) return hit
+    } catch { /* try the next source */ }
+  }
+  return null
+}
+
 export function MapPanel({ visible }: { visible: boolean }) {
   const ctx = useDashboard()
   const ctxRef = useRef(ctx)
@@ -371,11 +399,10 @@ export function MapPanel({ visible }: { visible: boolean }) {
   function locate() {
     const map = mapRef.current, ly = layers.current
     if (!map || !ly) return
-    if (!navigator.geolocation) return void toast.warning("Location is not available in this browser — please search instead")
     toast("Finding you…")
-    navigator.geolocation.getCurrentPosition((pos) => {
-      const { latitude: lat, longitude: lon, accuracy } = pos.coords
-      map.flyTo([lat, lon], 19, { duration: 1.2 })
+
+    const arrived = (lat: number, lon: number, opts: { approx?: boolean; accuracy?: number; city?: string | null }) => {
+      map.flyTo([lat, lon], opts.approx ? 13 : 19, { duration: 1.2 })
       if (ly.me) ly.me.remove()
       ly.me = L.marker([lat, lon], { icon: divIcon("sj-me"), interactive: false }).addTo(map)
       // tell the user which district and which Odisha DISCOM serves this spot
@@ -386,11 +413,33 @@ export function MapPanel({ visible }: { visible: boolean }) {
               "are Odisha's. You can still explore, but the numbers won't apply here.")
             return
           }
-          toast.success(`You are here (±${Math.round(accuracy)} m) — ${l.district} district, ${l.discom}. Now tap your roof!`)
+          const where = `${l.district} district, ${l.discom}`
+          if (opts.approx) {
+            toast.success(`Approximate location${opts.city ? ` (${opts.city})` : ""} — ${where}. ` +
+              "Zoom in to your house and tap its roof!")
+          } else {
+            toast.success(`You are here (±${Math.round(opts.accuracy ?? 30)} m) — ${where}. Now tap your roof!`)
+          }
         })
-        .catch(() => toast.success(`You are here (±${Math.round(accuracy)} m). Now tap your roof!`))
-    }, () => toast.warning("Could not get your location — allow location access, or search instead"),
-    { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 })
+        .catch(() => toast.success(opts.approx
+          ? "Approximate location found — zoom in to your house and tap its roof!"
+          : `You are here (±${Math.round(opts.accuracy ?? 30)} m). Now tap your roof!`))
+    }
+
+    // GPS blocked (common inside embedded previews) or denied -> ask the network instead
+    const fallback = async () => {
+      const hit = await ipLocate()
+      if (hit) return void arrived(hit.lat, hit.lon, { approx: true, city: hit.city })
+      toast.warning("Location is off or blocked — search your area or PIN code above instead. " +
+        "(Inside an embedded preview, open the app in its own tab to allow location.)")
+    }
+
+    if (!navigator.geolocation) return void fallback()
+    navigator.geolocation.getCurrentPosition(
+      (pos) => arrived(pos.coords.latitude, pos.coords.longitude, { accuracy: pos.coords.accuracy }),
+      () => void fallback(),
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 },
+    )
   }
 
   // keyboard: Esc cancels, Enter finishes drawing, Ctrl+Z undoes

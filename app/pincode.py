@@ -10,7 +10,7 @@ from __future__ import annotations
 import re
 from typing import Dict, Optional
 
-PIN_RE = re.compile(r"(?<!\d)([1-9]\d{2})\s?(\d{3})(?!\d)")
+PIN_RE = re.compile(r"(?<!\d)([1-9]\d{2})[\s\-]?(\d{3})(?!\d)")
 
 # exact localities (post-office areas) - lat, lon, name
 EXACT: Dict[str, tuple] = {

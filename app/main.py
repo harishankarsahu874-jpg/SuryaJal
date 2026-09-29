@@ -38,7 +38,7 @@ from .geo import (decode_polyline, encode_polyline, latlon_to_px, polygon_area_m
                   polygon_centroid, polygon_perimeter_m, px_to_latlon)
 from .layout import auto_layout
 from .rain import RULE_NAME, RULE_SHORT, assess_rain, green_score
-from . import pincode
+from . import pincode, places
 from .report import build_report_pdf, qr_svg, roof_thumbnail
 from .segment import RoofSegmenter, mask_to_polygon
 from .solar import assess_solar, odisha_state_subsidy, pm_surya_ghar_subsidy
@@ -329,12 +329,33 @@ def _geo_row(name: str, lat: float, lon: float, typ: str = "") -> dict:
             **{k: v for k, v in odisha.locate(lat, lon).items() if k in ("district", "discom")}}
 
 
+def _merge_rows(primary: list, extra: list, limit: int = 8) -> list:
+    """Online rows first, then offline ones that are not the same place (~1 km / same head)."""
+    out = list(primary)
+
+    def dup(r: dict) -> bool:
+        for e in out:
+            if abs(e["lat"] - r["lat"]) < 0.01 and abs(e["lon"] - r["lon"]) < 0.01:
+                return True
+            if e["name"].split(",")[0].strip().lower() == r["name"].split(",")[0].strip().lower():
+                return True
+        return False
+
+    for r in extra:
+        if not dup(r):
+            out.append(r)
+        if len(out) >= limit:
+            break
+    return out
+
+
 @app.get("/api/geocode")
 async def geocode(q: str = Query(..., min_length=2, max_length=200)):
     # SuryaJal serves Odisha: bias (and limit) place search to the State.
+    # The built-in PIN table + Odisha gazetteer always answer - Nominatim only adds detail.
     q = q.strip()
     pin = pincode.find_pin(q)
-    only_pin = pin is not None and re.fullmatch(r"[\d\s]+", q) is not None
+    only_pin = pin is not None and re.fullmatch(r"[\d\s\-]+", q) is not None
     data: list = []
     online = True
     try:
@@ -367,11 +388,16 @@ async def geocode(q: str = Query(..., min_length=2, max_length=200)):
         if ", India" in name and not any(t in name for t in (", Odisha", "Odisha,")):
             continue                       # outside the State: skip it
         out.append(_geo_row(name, lat, lon, str(d.get("type", ""))))
-    if pin and not out:                    # offline / not in OSM: built-in Odisha PIN table
-        hit = pincode.lookup(pin)
+    # ---- offline answers (always available): the bundled Odisha PIN table + gazetteer
+    offline: list = []
+    if pin:
+        hit = pincode.lookup(pin)          # every Odisha PIN resolves at least to its district
         if hit:
-            out = [_geo_row(hit["name"], hit["lat"], hit["lon"],
-                             "postcode" if hit["exact"] else "postcode_area")]
+            offline.append(_geo_row(hit["name"], hit["lat"], hit["lon"],
+                                    "postcode" if hit["exact"] else "postcode_area"))
+    for name, lat, lon, typ in places.search(q):
+        offline.append(_geo_row(f"{name}, Odisha", lat, lon, typ))
+    out = _merge_rows(out, offline)
     if not out and data:                   # nothing in Odisha matched - show what we found
         for d in data:
             if not isinstance(d, dict):
@@ -389,8 +415,13 @@ async def geocode(q: str = Query(..., min_length=2, max_length=200)):
                         "district": None, "discom": None})
             if len(out) == 3:
                 break
-    if not out and not online:
-        raise HTTPException(503, "Place search needs internet - you can still pan the map or enter an Odisha PIN code.")
+    if not out:
+        if pin:
+            raise HTTPException(404, f"PIN {pin} is not an Odisha PIN code - SuryaJal covers "
+                                     "Odisha PINs 751xxx-770xxx. Try an Odisha town or area name.")
+        if not online:
+            raise HTTPException(503, "Place search needs internet for that query - try an Odisha "
+                                     "town, area or PIN code (for example Puri, Sahid Nagar, 751007).")
     return out
 
 
