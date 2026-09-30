@@ -443,12 +443,40 @@ export function MapPanel({ visible }: { visible: boolean }) {
     tick()
   }
 
+  /** "My location": real GPS when the browser allows it. If it doesn't (embedded
+   *  previews block geolocation), never pretend some far internet city is you —
+   *  the network estimate is used only when it's near the current view, otherwise
+   *  we say plainly that location is off and how to fix it. */
   function locate() {
     const map = mapRef.current, ly = layers.current
     if (!map || !ly) return
-    toast("Finding you…")
 
-    const arrived = (lat: number, lon: number, opts: { approx?: boolean; accuracy: number; city?: string | null }) => {
+    /** in a preview iframe location often can't work - a real tab can */
+    const openApp = () => {
+      const a = document.createElement("a")
+      a.href = window.location.href
+      a.target = "_blank"
+      a.rel = "noopener"
+      a.click()
+    }
+
+    const giveUp = (why: "blocked" | "denied" | "failed") => {
+      if (why === "failed") {
+        setHint(<>Search your place above (like <b>NIST University</b>), zoom to your house and <b>tap its roof</b></>)
+        toast.info("Couldn't read your location — search your place above instead.", { duration: 7000 })
+        return
+      }
+      setHint(<span>Location is off here — <button type="button" onClick={openApp}
+        className="font-semibold text-amber-200 underline underline-offset-2">open in a new tab</button> to use it, or search above</span>)
+      toast.warning(
+        why === "blocked"
+          ? "This preview can't read location — open the app in its own tab to use it."
+          : "Your browser blocked location — allow it, or search your place above.",
+        { duration: 12000, action: { label: "Open in new tab", onClick: openApp } },
+      )
+    }
+
+    const arrived = (lat: number, lon: number, opts: { approx?: boolean; accuracy: number }) => {
       if (!inIndia(lat, lon)) {
         toast.warning("That spot is outside India — search your area or PIN code above instead.")
         return
@@ -463,6 +491,7 @@ export function MapPanel({ visible }: { visible: boolean }) {
         radius, color: "#38BDF8", weight: 1.5, fillColor: "#38BDF8", fillOpacity: 0.12, interactive: false,
       }).addTo(map)
       ly.me = L.marker([lat, lon], { icon: divIcon("sj-me"), interactive: false }).addTo(map)
+      setHint(<>You're here — zoom to your house and <b>tap its roof</b> 👆</>)
       const acc = opts.accuracy >= 1000 ? `±${Math.round(opts.accuracy / 1000)} km` : `±${Math.round(opts.accuracy)} m`
       const approxNote = `Approximate area ${acc} — zoom to your house and tap its roof.`
       const hereNote = `You are here ${acc}.`
@@ -475,33 +504,28 @@ export function MapPanel({ visible }: { visible: boolean }) {
         .catch(() => toast.success(opts.approx ? approxNote : `${hereNote} Now tap your roof!`))
     }
 
-    // GPS blocked (common inside embedded previews) or denied -> ask the network instead
-    const fallback = async () => {
+    /** network estimate: a fair hint only when it's near the current view */
+    const tryNet = async (why: "blocked" | "denied" | "failed") => {
       const hit = await ipLocate()
-      if (!hit) {
-        toast.warning("Location is off or blocked — search your area or PIN code above instead.")
-        return
+      if (hit) {
+        const centre = map.getCenter()
+        const kmAway = haversineKm(hit.lat, hit.lon, centre.lat, centre.lng)
+        if (kmAway < 150) return void arrived(hit.lat, hit.lon, { approx: true, accuracy: hit.accuracyKm * 1000 })
       }
-      const fix = { approx: true as const, accuracy: hit.accuracyKm * 1000, city: hit.city }
-      const centre = map.getCenter()
-      const kmAway = haversineKm(hit.lat, hit.lon, centre.lat, centre.lng)
-      if (kmAway < 150) return void arrived(hit.lat, hit.lon, fix)   // close to the view: go
-      // IP fixes are often hundreds of km wrong - ask before jumping anywhere
-      toast(`The internet thinks you're near ${hit.city ?? "a city"} — often wrong. Show that area?`, {
-        duration: 12000,
-        action: { label: "Show", onClick: () => arrived(hit.lat, hit.lon, fix) },
-      })
+      giveUp(why)   // far away or unknown: the map stays where the user put it - no guessing
     }
 
-    if (!navigator.geolocation) return void fallback()
+    if (!navigator.geolocation) return void tryNet("blocked")   // e.g. embedded preview
+    setHint(<>Checking your location — click <b>Allow</b> if the browser asks</>, true)
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         const { latitude: lat, longitude: lon, accuracy } = pos.coords
-        if (!isFinite(lat) || !isFinite(lon) || (Math.abs(lat) < 0.5 && Math.abs(lon) < 0.5)) return void fallback()
+        if (!isFinite(lat) || !isFinite(lon) || (Math.abs(lat) < 0.5 && Math.abs(lon) < 0.5)) return void tryNet("failed")
         arrived(lat, lon, { accuracy: Math.max(5, accuracy || 30) })
       },
-      () => void fallback(),
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 },
+      (err) => void tryNet(err?.code === 1 ? "denied" : "failed"),   // 1 = PERMISSION_DENIED
+      // 25s so a slow "Allow" click isn't cut off at 10s
+      { enableHighAccuracy: true, timeout: 25000, maximumAge: 60000 },
     )
   }
 
