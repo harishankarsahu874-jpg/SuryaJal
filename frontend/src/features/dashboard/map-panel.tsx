@@ -83,6 +83,9 @@ async function ipLocate(): Promise<{ lat: number; lon: number; city: string | nu
   return clusters[0].slice().sort((x, y) => x.accuracyKm - y.accuracyKm)[0]
 }
 
+/** Opens at most one "find my location" tab per app load (preview flow). */
+let locateTabOpened = false
+
 /** Great-circle distance in km (used to sanity-check IP fixes before flying). */
 function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number) {
   const dLat = ((lat2 - lat1) * Math.PI) / 180
@@ -186,6 +189,12 @@ export function MapPanel({ visible }: { visible: boolean }) {
       locate: () => locate(),
       flyTo: (lat, lon, z) => map.flyTo([lat, lon], z, { duration: 1.2 }),
       invalidate: () => map.invalidateSize(),
+    }
+    // "Open in new tab" flow (from an embedded preview): ask for location right away,
+    // where the browser is actually allowed to show the permission prompt
+    if (new URLSearchParams(window.location.search).get("locate")) {
+      window.history.replaceState(null, "", window.location.pathname + window.location.hash)
+      setTimeout(() => locate(), 500)
     }
     return () => {
       map.remove()
@@ -443,21 +452,30 @@ export function MapPanel({ visible }: { visible: boolean }) {
     tick()
   }
 
-  /** "My location": real GPS when the browser allows it. If it doesn't (embedded
-   *  previews block geolocation), never pretend some far internet city is you —
-   *  the network estimate is used only when it's near the current view, otherwise
-   *  we say plainly that location is off and how to fix it. */
+  /** "My location": real GPS when the browser allows it. Embedded previews usually
+   *  CAN'T show the location prompt - so instead of a dead-end message we open a
+   *  real tab (where the prompt works) and never guess a wrong internet city. */
   function locate() {
     const map = mapRef.current, ly = layers.current
     if (!map || !ly) return
 
-    /** in a preview iframe location often can't work - a real tab can */
-    const openApp = () => {
-      const a = document.createElement("a")
-      a.href = window.location.href
-      a.target = "_blank"
-      a.rel = "noopener"
-      a.click()
+    const inIframe = window.self !== window.top
+    const appUrl = () => {
+      const u = new URL(window.location.href)
+      u.searchParams.set("locate", "1")
+      return u.toString()
+    }
+    /** a real top-level tab can show the Allow prompt; the preview usually can't */
+    const openTab = (): boolean => {
+      try {
+        const w = window.open(appUrl(), "_blank")
+        if (w) { try { w.opener = null } catch { /* cross-origin: fine */ } return true }
+      } catch { /* popup blocked by the embedder */ }
+      return false
+    }
+    const copyLink = () => {
+      void navigator.clipboard?.writeText(window.location.href).catch(() => {})
+      toast.info("Link copied — open it in your browser, then tap the 📍 button again.")
     }
 
     const giveUp = (why: "blocked" | "denied" | "failed") => {
@@ -466,14 +484,32 @@ export function MapPanel({ visible }: { visible: boolean }) {
         toast.info("Couldn't read your location — search your place above instead.", { duration: 7000 })
         return
       }
-      setHint(<span>Location is off here — <button type="button" onClick={openApp}
-        className="font-semibold text-amber-200 underline underline-offset-2">open in a new tab</button> to use it, or search above</span>)
-      toast.warning(
-        why === "blocked"
-          ? "This preview can't read location — open the app in its own tab to use it."
-          : "Your browser blocked location — allow it, or search your place above.",
-        { duration: 12000, action: { label: "Open in new tab", onClick: openApp } },
-      )
+      if (inIframe) {
+        // the embedded preview can't ask for location - a real tab can
+        if (!locateTabOpened && openTab()) {
+          locateTabOpened = true
+          setHint(<>Opened a new tab — click <b>Allow</b> there to find you</>)
+          toast.info("This preview can't ask for location — I opened it in a new tab. Just click Allow there 👍",
+            { duration: 10000 })
+          return
+        }
+        if (locateTabOpened) {
+          setHint(<>Click <b>Allow</b> in the new tab — or search your place above</>)
+          toast("Waiting for Allow in the other tab?", {
+            duration: 10000, action: { label: "Open again", onClick: () => openTab() },
+          })
+          return
+        }
+        setHint(<span>Location is off here — <button type="button" onClick={() => (openTab() || copyLink())}
+          className="font-semibold text-amber-200 underline underline-offset-2">open in a new tab</button> to use it, or search above</span>)
+        copyLink()
+        return
+      }
+      // real tab: the site's location permission is switched off in the browser
+      setHint(<>Allow location for this site (tap the <b>lock / ⓘ</b> near the address bar), then tap 📍 again</>)
+      toast.warning("Your browser is blocking location for this site — tap the lock / ⓘ near the address bar, set Location to Allow, and try again.", {
+        duration: 12000, action: { label: "Try again", onClick: () => locate() },
+      })
     }
 
     const arrived = (lat: number, lon: number, opts: { approx?: boolean; accuracy: number }) => {
