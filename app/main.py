@@ -714,6 +714,6 @@ async def site(path: str, request: Request):
             return FileResponse(f, headers={"Cache-Control": cache})
     index = root / "index.html"
     if not index.exists():                                      # site not built -> classic tool
-        return FileResponse(CLASSIC_HTML, headers={"Cache-Control": "no-cache"})
+        return FileResponse(CLASSIC_HTML, headers={"Cache-Control": "no-store"})
     return FileResponse(index, status_code=200 if clean in SPA_ROUTES else 404,
-                        headers={"Cache-Control": "no-cache"})
+                        headers={"Cache-Control": "no-store"})

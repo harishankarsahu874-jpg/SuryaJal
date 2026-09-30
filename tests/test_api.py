@@ -174,6 +174,13 @@ def test_geocode_drops_foreign_rows(client, monkeypatch):
     assert in_odisha(rows[0]["lat"], rows[0]["lon"])
 
 
+def test_index_never_serves_stale_bundles(client):
+    """A held-open preview can run an old JS bundle forever - HTML must never be cached."""
+    r = client.get("/")
+    assert r.status_code == 200
+    assert "no-store" in r.headers.get("cache-control", "")
+
+
 def _synthetic_crop_b64():
     """A satellite-looking 512x512 scene with a clear roof in the middle."""
     import base64

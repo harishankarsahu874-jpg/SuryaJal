@@ -31,89 +31,6 @@ function zoomFor(type: string) {
   return 17
 }
 
-/** Approximate position from the browser's network - works even when GPS is
- * blocked (e.g. embedded previews without the geolocation permission). */
-async function ipLocate(): Promise<{ lat: number; lon: number; city: string | null; accuracyKm: number } | null> {
-  type Fix = { lat: number; lon: number; city: string | null; accuracyKm: number }
-  const sources: (() => Promise<Fix | null>)[] = [
-    async () => {
-      const r = await fetch("https://ipwho.is/", { signal: AbortSignal.timeout(5000) })
-      const j = await r.json() as { success?: boolean; latitude?: number; longitude?: number; city?: string }
-      const lat = Number(j?.latitude), lon = Number(j?.longitude)
-      return j?.success !== false && isFinite(lat) && isFinite(lon)
-        ? { lat, lon, city: j?.city ?? null, accuracyKm: 25 } : null
-    },
-    async () => {
-      const r = await fetch("https://ipapi.co/json/", { signal: AbortSignal.timeout(5000) })
-      const j = await r.json() as { error?: boolean; latitude?: number; longitude?: number; city?: string }
-      const lat = Number(j?.latitude), lon = Number(j?.longitude)
-      return !j?.error && isFinite(lat) && isFinite(lon)
-        ? { lat, lon, city: j?.city ?? null, accuracyKm: 15 } : null
-    },
-    async () => {
-      const r = await fetch("https://get.geojs.io/v1/ip/geo.json", { signal: AbortSignal.timeout(5000) })
-      const j = await r.json() as { latitude?: number; longitude?: number; city?: string }
-      const lat = Number(j?.latitude), lon = Number(j?.longitude)
-      return isFinite(lat) && isFinite(lon)
-        ? { lat, lon, city: j?.city ?? null, accuracyKm: 25 } : null
-    },
-  ]
-  // ask all three at once - a bad/VPN answer outside India is dropped, not flown to
-  const settled = await Promise.all(sources.map((s) => s().catch(() => null)))
-  const ok = settled
-    .filter((f): f is Fix => !!f && inIndia(f.lat, f.lon) && !(Math.abs(f.lat) < 0.5 && Math.abs(f.lon) < 0.5))
-  if (!ok.length) return null
-  // majority vote: providers that agree within ~150 km form a cluster; IPs from
-  // mobile/CGNAT often geolocate to the ISP's registry city, so consensus beats
-  // blindly trusting one database
-  const clusters: Fix[][] = []
-  for (const f of ok) {
-    const hit = clusters.find((c) => {
-      const ref = c[0]
-      const dx = (f.lon - ref.lon) * Math.cos((f.lat * Math.PI) / 180) * 111
-      const dy = (f.lat - ref.lat) * 111
-      return Math.hypot(dx, dy) < 150
-    })
-    if (hit) hit.push(f)
-    else clusters.push([f])
-  }
-  clusters.sort((a, b) =>
-    b.length - a.length ||
-    Math.min(...a.map((f) => f.accuracyKm)) - Math.min(...b.map((f) => f.accuracyKm)))
-  return clusters[0].slice().sort((x, y) => x.accuracyKm - y.accuracyKm)[0]
-}
-
-/** The place the user last chose (search pick / city chip / real GPS fix).
- *  When location can't run (embedded preview), the 📍 button goes back there
- *  instead of showing broken promises. */
-type SavedPlace = { lat: number; lon: number; name: string; z: number }
-
-function rememberPlace(lat: number, lon: number, name: string, z: number) {
-  try { localStorage.setItem("sj.place", JSON.stringify({ lat, lon, name, z })) } catch { /* private mode */ }
-}
-
-function readPlace(): SavedPlace | null {
-  try {
-    const raw = localStorage.getItem("sj.place")
-    if (!raw) return null
-    const p = JSON.parse(raw) as SavedPlace
-    return isFinite(p?.lat) && isFinite(p?.lon) && typeof p?.name === "string" && inIndia(p.lat, p.lon)
-      ? { ...p, z: isFinite(p.z) ? p.z : 15 } : null
-  } catch { return null }
-}
-
-/** Opens at most one "find my location" tab per app load (preview flow). */
-let locateTabOpened = false
-
-/** Great-circle distance in km (used to sanity-check IP fixes before flying). */
-function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number) {
-  const dLat = ((lat2 - lat1) * Math.PI) / 180
-  const dLon = ((lon2 - lon1) * Math.PI) / 180
-  const a = Math.sin(dLat / 2) ** 2 +
-    Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLon / 2) ** 2
-  return 6371 * 2 * Math.asin(Math.sqrt(a))
-}
-
 /** Zoom that matches how precise a fix actually is (never pretend an IP is a rooftop). */
 function zoomForAccuracy(m: number) {
   if (m < 100) return 18
@@ -208,12 +125,6 @@ export function MapPanel({ visible }: { visible: boolean }) {
       locate: () => locate(),
       flyTo: (lat, lon, z) => map.flyTo([lat, lon], z, { duration: 1.2 }),
       invalidate: () => map.invalidateSize(),
-    }
-    // "Open in new tab" flow (from an embedded preview): ask for location right away,
-    // where the browser is actually allowed to show the permission prompt
-    if (new URLSearchParams(window.location.search).get("locate")) {
-      window.history.replaceState(null, "", window.location.pathname + window.location.hash)
-      setTimeout(() => locate(), 500)
     }
     return () => {
       map.remove()
@@ -471,119 +382,55 @@ export function MapPanel({ visible }: { visible: boolean }) {
     tick()
   }
 
-  /** "My location": real GPS when the browser allows it. Embedded previews usually
-   *  CAN'T show the location prompt - so instead of a dead-end message we open a
-   *  real tab (where the prompt works) and never guess a wrong internet city. */
+  /** "My location": real GPS only - accurate or an honest one-liner. Embedded
+   *  previews can't ask for location at all (so the button isn't shown there),
+   *  and we never guess from internet IPs - a wrong "you are here" is worse than none. */
   function locate() {
     const map = mapRef.current, ly = layers.current
     if (!map || !ly) return
 
-    const inIframe = window.self !== window.top
-    const appUrl = () => {
-      const u = new URL(window.location.href)
-      u.searchParams.set("locate", "1")
-      return u.toString()
-    }
-    /** a real top-level tab can show the Allow prompt; the preview usually can't */
-    const openTab = (): boolean => {
-      try {
-        const w = window.open(appUrl(), "_blank")
-        if (w) { try { w.opener = null } catch { /* cross-origin: fine */ } return true }
-      } catch { /* popup blocked by the embedder */ }
-      return false
+    const noFix = () => {
+      setHint(<>Search your place above (like <b>NIST University</b>), zoom to your house and <b>tap its roof</b></>)
+      toast.info("Couldn't read your location — search your place above instead.", { duration: 7000 })
     }
 
-    const giveUp = (why: "blocked" | "denied" | "failed") => {
-      if (why === "failed") {
-        setHint(<>Search your place above (like <b>NIST University</b>), zoom to your house and <b>tap its roof</b></>)
-        toast.info("Couldn't read your location — search your place above instead.", { duration: 7000 })
-        return
-      }
-      if (inIframe) {
-        // the embedded preview can't ask for location - a real tab can
-        if (!locateTabOpened && openTab()) {
-          locateTabOpened = true
-          setHint(<>Opened a new tab — click <b>Allow</b> there to find you</>)
-          toast.info("This preview can't ask for location — I opened it in a new tab. Just click Allow there 👍",
-            { duration: 10000 })
-          return
-        }
-        if (locateTabOpened) {
-          setHint(<>Click <b>Allow</b> in the new tab — or search your place above</>)
-          toast("Waiting for Allow in the other tab?", {
-            duration: 10000, action: { label: "Open again", onClick: () => openTab() },
-          })
-          return
-        }
-        // popups are blocked here too - go back to the place the user already chose
-        const saved = readPlace()
-        if (saved) {
-          map.flyTo([saved.lat, saved.lon], saved.z, { duration: 1.2 })
-          setHint(<>Zoom to your house and <b>tap its roof</b> 👆</>)
-          toast.info(`Location is off in this preview — back to ${saved.name}.`, { duration: 7000 })
-          return
-        }
-        setHint(<>Search your place above (like <b>NIST University</b>), zoom to your house and <b>tap its roof</b></>)
-        toast.info("Location is off in this preview — search your place above instead.", { duration: 7000 })
-        return
-      }
-      // real tab: the site's location permission is switched off in the browser
-      setHint(<>Allow location for this site (tap the <b>lock / ⓘ</b> near the address bar), then tap 📍 again</>)
-      toast.warning("Your browser is blocking location for this site — tap the lock / ⓘ near the address bar, set Location to Allow, and try again.", {
-        duration: 12000, action: { label: "Try again", onClick: () => locate() },
-      })
-    }
-
-    const arrived = (lat: number, lon: number, opts: { approx?: boolean; accuracy: number }) => {
+    const arrived = (lat: number, lon: number, accuracy: number) => {
       if (!inIndia(lat, lon)) {
         toast.warning("That spot is outside India — search your area or PIN code above instead.")
         return
       }
-      const zoom = opts.approx ? zoomForAccuracy(opts.accuracy) : 19
+      const zoom = zoomForAccuracy(accuracy)
       map.flyTo([lat, lon], zoom, { duration: 1.2 })
-      rememberPlace(lat, lon, "your last location", zoom)
       if (ly.me) ly.me.remove()
       if (ly.meC) ly.meC.remove()
-      // honest accuracy circle: GPS = metres, IP fix = kilometres
-      const radius = Math.min(opts.accuracy, opts.approx ? 50000 : 2000)
       ly.meC = L.circle([lat, lon], {
-        radius, color: "#38BDF8", weight: 1.5, fillColor: "#38BDF8", fillOpacity: 0.12, interactive: false,
+        radius: Math.min(accuracy, 2000), color: "#38BDF8", weight: 1.5,
+        fillColor: "#38BDF8", fillOpacity: 0.12, interactive: false,
       }).addTo(map)
       ly.me = L.marker([lat, lon], { icon: divIcon("sj-me"), interactive: false }).addTo(map)
       setHint(<>You're here — zoom to your house and <b>tap its roof</b> 👆</>)
-      const acc = opts.accuracy >= 1000 ? `±${Math.round(opts.accuracy / 1000)} km` : `±${Math.round(opts.accuracy)} m`
-      const approxNote = `Approximate area ${acc} — zoom to your house and tap its roof.`
-      const hereNote = `You are here ${acc}.`
-      // which district and which Odisha DISCOM serves this spot (shown only when short)
+      const acc = accuracy >= 1000 ? `±${Math.round(accuracy / 1000)} km` : `±${Math.round(accuracy)} m`
       api<LocationInfo>(`/api/odisha/locate?lat=${lat.toFixed(5)}&lon=${lon.toFixed(5)}`)
-        .then((l) => {
-          const where = l.in_odisha ? ` ${l.district}, ${l.discom}.` : ""
-          toast.success(opts.approx ? approxNote : `${hereNote}${where} Now tap your roof!`)
-        })
-        .catch(() => toast.success(opts.approx ? approxNote : `${hereNote} Now tap your roof!`))
+        .then((l) => toast.success(`You are here ${acc}.${l.in_odisha ? ` ${l.district}, ${l.discom}.` : ""} Now tap your roof!`))
+        .catch(() => toast.success(`You are here ${acc}. Now tap your roof!`))
     }
 
-    /** network estimate: a fair hint only when it's near the current view */
-    const tryNet = async (why: "blocked" | "denied" | "failed") => {
-      const hit = await ipLocate()
-      if (hit) {
-        const centre = map.getCenter()
-        const kmAway = haversineKm(hit.lat, hit.lon, centre.lat, centre.lng)
-        if (kmAway < 150) return void arrived(hit.lat, hit.lon, { approx: true, accuracy: hit.accuracyKm * 1000 })
-      }
-      giveUp(why)   // far away or unknown: the map stays where the user put it - no guessing
-    }
-
-    if (!navigator.geolocation) return void tryNet("blocked")   // e.g. embedded preview
+    if (!navigator.geolocation) return void noFix()
     setHint(<>Checking your location — click <b>Allow</b> if the browser asks</>, true)
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         const { latitude: lat, longitude: lon, accuracy } = pos.coords
-        if (!isFinite(lat) || !isFinite(lon) || (Math.abs(lat) < 0.5 && Math.abs(lon) < 0.5)) return void tryNet("failed")
-        arrived(lat, lon, { accuracy: Math.max(5, accuracy || 30) })
+        if (!isFinite(lat) || !isFinite(lon) || (Math.abs(lat) < 0.5 && Math.abs(lon) < 0.5)) return void noFix()
+        arrived(lat, lon, Math.max(5, accuracy || 30))
       },
-      (err) => void tryNet(err?.code === 1 ? "denied" : "failed"),   // 1 = PERMISSION_DENIED
-      // 25s so a slow "Allow" click isn't cut off at 10s
+      (err) => {
+        if (err?.code === 1) {   // permission blocked: say the real fix, no dead ends
+          setHint(<>Allow location for this site (tap the <b>lock / ⓘ</b> near the address bar), then tap 📍 again</>)
+          toast.warning("Your browser is blocking location — tap the lock / ⓘ near the address bar, set Location to Allow, and try again.", {
+            duration: 12000, action: { label: "Try again", onClick: () => locate() },
+          })
+        } else noFix()
+      },
       { enableHighAccuracy: true, timeout: 25000, maximumAge: 60000 },
     )
   }
@@ -629,9 +476,7 @@ export function MapPanel({ visible }: { visible: boolean }) {
       {/* search + hint */}
       <div className="absolute inset-x-3 top-3 z-[500] flex flex-col items-start gap-2 sm:left-4 sm:right-auto sm:w-[min(400px,calc(100%-2rem))]">
         <SearchBox onPick={(g) => {
-            const z = zoomFor(g.type)
-            mapRef.current?.flyTo([g.lat, g.lon], z, { duration: 1.2 })
-            rememberPlace(g.lat, g.lon, g.name.split(",")[0], z)
+            mapRef.current?.flyTo([g.lat, g.lon], zoomFor(g.type), { duration: 1.2 })
             setHint(g.discom
               ? <>Zoom in to your house in <b>{g.district}</b> ({g.discom}) and <b>tap its roof</b> 👆</>
               : <>Zoom in to your house and <b>tap its roof</b> 👆</>)
@@ -641,7 +486,7 @@ export function MapPanel({ visible }: { visible: boolean }) {
         <div className="no-scrollbar flex max-w-full items-center gap-1.5 overflow-x-auto pb-0.5">
           {ODISHA_CITIES.map((c) => (
             <button key={c.name} type="button"
-              onClick={() => { mapRef.current?.flyTo([c.lat, c.lon], c.zoom, { duration: 1.1 }); rememberPlace(c.lat, c.lon, c.name, c.zoom); setHint(<>Zoom in to your house and <b>tap its roof</b> 👆</>) }}
+              onClick={() => { mapRef.current?.flyTo([c.lat, c.lon], c.zoom, { duration: 1.1 }); setHint(<>Zoom in to your house and <b>tap its roof</b> 👆</>) }}
               className="shrink-0 rounded-full bg-white/90 px-2.5 py-1 text-[11px] font-semibold text-sage-800 shadow backdrop-blur hover:bg-white">
               {c.name}
             </button>

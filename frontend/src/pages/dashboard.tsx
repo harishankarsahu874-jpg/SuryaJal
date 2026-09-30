@@ -61,10 +61,14 @@ function Dashboard() {
           </span>
         )}
         <div className="ml-auto flex items-center gap-1.5">
-          <button type="button" onClick={() => { setTab("map"); setTimeout(() => mapApi.current?.locate(), 80) }}
-            className="grid size-10 place-items-center rounded-xl text-foreground/80 transition hover:bg-secondary" aria-label="Go to my location" title="My location">
-            <Crosshair className="size-5" />
-          </button>
+          {/* current location: real browser tabs only - embedded previews can't
+              ask for GPS at all, so we don't show a button there that can't work */}
+          {window.self === window.top && (
+            <button type="button" onClick={() => { setTab("map"); setTimeout(() => mapApi.current?.locate(), 80) }}
+              className="grid size-10 place-items-center rounded-xl text-foreground/80 transition hover:bg-secondary" aria-label="Go to my location" title="My location">
+              <Crosshair className="size-5" />
+            </button>
+          )}
           <UserMenu compact />
         </div>
       </header>
