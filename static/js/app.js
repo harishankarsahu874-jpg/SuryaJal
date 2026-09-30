@@ -653,6 +653,8 @@
     if (['road', 'street', 'tertiary', 'secondary', 'primary', 'service', 'living_street'].includes(type)) return 18;
     if (['neighbourhood', 'suburb', 'quarter', 'hamlet'].includes(type)) return 16;
     if (['city', 'town', 'administrative', 'county', 'state_district'].includes(type)) return 13;
+    if (type === 'postcode') return 15;
+    if (type === 'postcode_area') return 12;
     return 17;
   }
   function pickResult(r) {
@@ -683,12 +685,28 @@
   });
   document.addEventListener('click', e => { if (!e.target.closest('.search')) results.hidden = true; });
 
+  // Approximate position from the network - works when GPS is blocked (embedded previews).
+  async function ipLocate() {
+    const sources = [
+      async () => {
+        const j = await (await fetch('https://ipwho.is/')).json();
+        return j && j.success !== false && isFinite(j.latitude) && isFinite(j.longitude)
+          ? { lat: +j.latitude, lon: +j.longitude, city: j.city || null } : null;
+      },
+      async () => {
+        const j = await (await fetch('https://ipapi.co/json/')).json();
+        return j && !j.error && isFinite(j.latitude) && isFinite(j.longitude)
+          ? { lat: +j.latitude, lon: +j.longitude, city: j.city || null } : null;
+      },
+    ];
+    for (const s of sources) { try { const hit = await s(); if (hit) return hit; } catch (e) { /* next */ } }
+    return null;
+  }
+
   $('#locateBtn').addEventListener('click', () => {
-    if (!navigator.geolocation) return toast('Location is not available in this browser — please search instead', 'warn');
     toast('Finding you…');
-    navigator.geolocation.getCurrentPosition(pos => {
-      const { latitude: lat, longitude: lon, accuracy } = pos.coords;
-      flyTo(lat, lon, 19);
+    const arrived = (lat, lon, approx, accuracy, city) => {
+      flyTo(lat, lon, approx ? 13 : 19);
       if (meMarker) meMarker.remove();
       meMarker = L.marker([lat, lon], { icon: icon('me-dot'), interactive: false }).addTo(map);
       // which district / Odisha DISCOM serves this spot?
@@ -698,11 +716,26 @@
             return toast('SuryaJal is built for Odisha — tariffs, subsidies and rainwater rules are Odisha’s. ' +
               'You can still explore, but the numbers won’t apply here.', 'warn', 8000);
           }
-          toast(`You are here (±${Math.round(accuracy)} m) — ${l.district} district, ${l.discom}. Now tap your roof!`, 'ok');
+          const where = `${l.district} district, ${l.discom}`;
+          toast(approx
+            ? `Approximate location${city ? ` (${esc(city)})` : ''} — ${where}. Zoom in to your house and tap its roof!`
+            : `You are here (±${Math.round(accuracy)} m) — ${where}. Now tap your roof!`, 'ok');
         })
-        .catch(() => toast(`You are here (±${Math.round(accuracy)} m). Now tap your roof!`, 'ok'));
-    }, () => toast('Could not get your location — allow location access, or search instead', 'warn'),
-    { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 });
+        .catch(() => toast(approx
+          ? 'Approximate location found — zoom in to your house and tap its roof!'
+          : `You are here (±${Math.round(accuracy)} m). Now tap your roof!`, 'ok'));
+    };
+    const fallback = async () => {
+      const hit = await ipLocate();
+      if (hit) return arrived(hit.lat, hit.lon, true, 0, hit.city);
+      toast('Location is off or blocked — search your area or PIN code above instead. ' +
+        '(Inside an embedded preview, open the app in its own tab to allow location.)', 'warn', 8000);
+    };
+    if (!navigator.geolocation) return void fallback();
+    navigator.geolocation.getCurrentPosition(
+      pos => arrived(pos.coords.latitude, pos.coords.longitude, false, pos.coords.accuracy, null),
+      () => void fallback(),
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 });
   });
 
   // ------------------------------------------------------------------ keyboard

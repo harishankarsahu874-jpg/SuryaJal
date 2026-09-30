@@ -10,7 +10,7 @@ from __future__ import annotations
 import re
 from typing import Dict, Optional
 
-PIN_RE = re.compile(r"(?<!\d)([1-9]\d{2})\s?(\d{3})(?!\d)")
+PIN_RE = re.compile(r"(?<!\d)([1-9]\d{2})[\s\-]?(\d{3})(?!\d)")
 
 # exact localities (post-office areas) - lat, lon, name
 EXACT: Dict[str, tuple] = {
@@ -39,6 +39,7 @@ EXACT: Dict[str, tuple] = {
     "751025": (20.2900, 85.7800, "Nayapalli west, Bhubaneswar"),
     "751030": (20.2600, 85.7760, "Jagamara / Khandagiri, Bhubaneswar"),
     "751031": (20.3660, 85.8190, "Infocity / Patia, Bhubaneswar"),
+    "761008": (19.1868, 84.7529, "Palur Hills / Golanthara (NIST area), Ganjam"),
     "753001": (20.4686, 85.8792, "Cuttack GPO"),
     "753003": (20.4600, 85.8600, "Buxi Bazar, Cuttack"),
     "753004": (20.4720, 85.8930, "Mangalabag, Cuttack"),

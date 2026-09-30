@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import io
 import math
 from collections import OrderedDict
@@ -135,7 +136,26 @@ class TileFetcher:
                 side = int(side)
                 gx0, gy0 = int(cx - side / 2), int(cy - side / 2)
                 img, bad = await self.crop(z, gx0, gy0, side, side)
-                if bad > 0.25 and z > 16:
-                    continue
+                if bad > 0.25:
+                    continue     # imagery missing here: try one zoom out (never ship a black crop)
                 return {"img": img, "z": z, "gx0": gx0, "gy0": gy0, "bad": bad}
         return None
+
+
+def decode_crop_b64(data: str) -> np.ndarray:
+    """Decode a browser-captured map crop (base64 PNG/JPEG, plain or a data URL).
+
+    The frontend draws the same crop the server would fetch - from its own tile
+    access - so segmentation keeps working when this machine has no internet.
+    Returns an RGB uint8 array; raises ValueError on garbage input.
+    """
+    if data.startswith("data:") and "," in data[:64]:
+        data = data.split(",", 1)[1]
+    try:
+        raw = base64.b64decode(data, validate=False)
+        img = Image.open(io.BytesIO(raw)).convert("RGB")
+    except Exception as exc:                       # binascii / PIL / truncated
+        raise ValueError("unreadable image") from exc
+    if img.width != img.height or not (128 <= img.width <= 2048):
+        raise ValueError("unexpected crop size")
+    return np.asarray(img)

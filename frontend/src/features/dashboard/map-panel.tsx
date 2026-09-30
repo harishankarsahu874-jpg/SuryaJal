@@ -4,17 +4,18 @@ import "leaflet/dist/leaflet.css"
 import { AnimatePresence, motion } from "motion/react"
 import { toast } from "sonner"
 import {
-  ArrowRight, Check, Eraser, Loader2, Minus, PenLine, Plus, RotateCcw, Search, Sparkles, Undo2, X,
+  ArrowRight, Check, Eraser, Loader2, MapPin, Minus, PenLine, Plus, RotateCcw, Search, Sparkles, Undo2, X,
 } from "lucide-react"
-import { api, type LocationInfo, type SegmentResponse } from "@/lib/api"
-import { areaM2, ODISHA_CENTER, ODISHA_CITIES, ODISHA_ZOOM, type LatLng } from "@/lib/geo"
-import { EsriImagery, type ImageryFallbackEvent } from "@/lib/imagery"
+import { api, type SegmentResponse } from "@/lib/api"
+import { searchPlaces, type GeoResult } from "@/lib/geosearch"
+import { captureCrop } from "@/lib/mapcrop"
+import { areaM2, INDIA_BOUNDS, ODISHA_CENTER, ODISHA_CITIES, ODISHA_ZOOM, type LatLng } from "@/lib/geo"
+import { EsriImagery } from "@/lib/imagery"
 import { fmtIN, litres, sqft } from "@/lib/format"
 import { cn } from "@/lib/utils"
 import { useDashboard } from "./state"
 
 type SegPoint = { lat: number; lon: number; label: 0 | 1 }
-type GeoResult = { name: string; lat: number; lon: number; type: string; district?: string | null; discom?: string | null }
 
 const ESRI = "https://server.arcgisonline.com/ArcGIS/rest/services"
 const clamp = (v: number, a: number, b: number) => Math.min(b, Math.max(a, v))
@@ -41,11 +42,11 @@ export function MapPanel({ visible }: { visible: boolean }) {
   const mapRef = useRef<L.Map | null>(null)
   const layers = useRef<{
     roof: L.Polygon; panels: L.LayerGroup; handles: L.LayerGroup; prompts: L.LayerGroup; draw: L.LayerGroup
-    tip: L.Tooltip; rubber: L.Polyline | null; pulse: L.Marker | null; me: L.Marker | null
+    tip: L.Tooltip; rubber: L.Polyline | null; pulse: L.Marker | null; me: L.Marker | null; meC: L.Circle | null
   } | null>(null)
   // interaction state lives in a ref (Leaflet handlers are registered once) + a tick to re-render the UI
   const S = useRef({ mode: "ai" as "ai" | "draw", busy: false, aiPoints: [] as SegPoint[], refine: null as 0 | 1 | null,
-    drawPts: [] as LatLng[], warned: false, zoom: ODISHA_ZOOM }).current
+    drawPts: [] as LatLng[], zoom: ODISHA_ZOOM }).current
   const [, tick] = useReducer((x: number) => x + 1, 0)
   const [hint, setHintState] = useState<{ html: ReactNode; busy?: boolean }>({ html: <>Search your area, zoom in and <b>tap your roof</b></> })
   const [liveArea, setLiveArea] = useState<number | null>(null)
@@ -62,21 +63,19 @@ export function MapPanel({ visible }: { visible: boolean }) {
   // ------------------------------------------------------------ map setup (once)
   useEffect(() => {
     if (!elRef.current || mapRef.current) return
-    const map = L.map(elRef.current, { zoomControl: false, maxZoom: 21, minZoom: 3, worldCopyJump: true })
-      .setView(ODISHA_CENTER, ODISHA_ZOOM)          // Bhubaneswar, Odisha
+    const map = L.map(elRef.current, {
+      zoomControl: false, maxZoom: 21, minZoom: 5,
+      // India only - SuryaJal is built for Indian (Odisha-first) roofs, and a
+      // full-world view helps nobody
+      maxBounds: INDIA_BOUNDS, maxBoundsViscosity: 1.0,
+    }).setView(ODISHA_CENTER, ODISHA_ZOOM)          // Bhubaneswar, Odisha
     mapRef.current = map
     // Esri has no z19 close-ups in many Odisha towns (it answers with a grey "Map data not yet
-    // available" tile). EsriImagery detects that and shows the nearest zoom that has a photo.
-    const imagery = new EsriImagery(`${ESRI}/World_Imagery/MapServer/tile/{z}/{y}/{x}`, {
+    // available" tile). EsriImagery detects that and silently shows the nearest zoom that has a photo.
+    new EsriImagery(`${ESRI}/World_Imagery/MapServer/tile/{z}/{y}/{x}`, {
       maxNativeZoom: 19, maxZoom: 21,
       attribution: "Imagery © Esri, Maxar, Earthstar Geographics | Search © OpenStreetMap",
     }).addTo(map)
-    imagery.once("imagery:fallback", (e) => {
-      const lv = (e as ImageryFallbackEvent).levelsUp
-      toast.info(`No street-level satellite photo exists for this spot yet — showing the nearest zoom ` +
-        `(${lv} level${lv > 1 ? "s" : ""} out, a little blurry). You can still tap your roof: the AI adapts.`,
-        { duration: 9000 })
-    })
     const labels = L.layerGroup([
       L.tileLayer(`${ESRI}/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}`, { maxNativeZoom: 19, maxZoom: 21, opacity: 0.9 }),
       L.tileLayer(`${ESRI}/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}`, { maxNativeZoom: 19, maxZoom: 21, opacity: 0.5 }),
@@ -93,7 +92,7 @@ export function MapPanel({ visible }: { visible: boolean }) {
       prompts: L.layerGroup().addTo(map),
       draw: L.layerGroup().addTo(map),
       tip: L.tooltip({ permanent: true, direction: "top", className: "sj-area-tip", offset: [0, -8], interactive: false }),
-      rubber: null, pulse: null, me: null,
+      rubber: null, pulse: null, me: null, meC: null,
     }
 
     map.on("zoomend", () => {
@@ -113,7 +112,6 @@ export function MapPanel({ visible }: { visible: boolean }) {
     })
 
     ctxRef.current.mapApi.current = {
-      locate: () => locate(),
       flyTo: (lat, lon, z) => map.flyTo([lat, lon], z, { duration: 1.2 }),
       invalidate: () => map.invalidateSize(),
     }
@@ -243,11 +241,20 @@ export function MapPanel({ visible }: { visible: boolean }) {
     showPrompts()
     const last = pts[pts.length - 1]
     ly.pulse = L.marker([last.lat, last.lon], { icon: divIcon("sj-pulse"), interactive: false }).addTo(map)
-    setHint(<>MobileSAM is tracing your roof…</>, true)
+    setHint(<>Tracing your roof…</>, true)
     const zoom = clamp(Math.round(map.getZoom()), 17, 19)
     const t0 = performance.now()
     try {
-      const r = await api<SegmentResponse>("/api/segment", { body: { points: pts, zoom } })
+      // the browser draws the crop from the tiles it already has and sends it along,
+      // so the AI works even when the server itself is offline
+      const cap = await captureCrop(last.lat, last.lon, zoom)
+      const r = await api<SegmentResponse>("/api/segment", {
+        body: {
+          points: pts,
+          zoom,
+          ...(cap ? { image: cap.image, origin: [cap.gx0, cap.gy0], z: cap.z } : {}),
+        },
+      })
       if (!r.ok) {
         toast.warning(r.message ?? "No roof found there.")
         if (S.aiPoints.length > 1) S.aiPoints.pop()
@@ -258,10 +265,6 @@ export function MapPanel({ visible }: { visible: boolean }) {
       const secs = ((performance.now() - t0) / 1000).toFixed(1)
       setHint(<>Roof found in {secs}s — drag the <b>yellow dots</b> to fine-tune</>)
       r.warnings?.forEach((w) => toast.warning(w, { duration: 7000 }))
-      if (r.method !== "mobilesam" && !S.warned) {
-        S.warned = true
-        toast.warning("Basic OpenCV mode — for best accuracy run: python scripts/download_models.py", { duration: 7000 })
-      }
     } catch (err) {
       toast.error((err as Error).message)
       if (S.aiPoints.length > 1) S.aiPoints.pop()
@@ -368,31 +371,6 @@ export function MapPanel({ visible }: { visible: boolean }) {
     tick()
   }
 
-  function locate() {
-    const map = mapRef.current, ly = layers.current
-    if (!map || !ly) return
-    if (!navigator.geolocation) return void toast.warning("Location is not available in this browser — please search instead")
-    toast("Finding you…")
-    navigator.geolocation.getCurrentPosition((pos) => {
-      const { latitude: lat, longitude: lon, accuracy } = pos.coords
-      map.flyTo([lat, lon], 19, { duration: 1.2 })
-      if (ly.me) ly.me.remove()
-      ly.me = L.marker([lat, lon], { icon: divIcon("sj-me"), interactive: false }).addTo(map)
-      // tell the user which district and which Odisha DISCOM serves this spot
-      api<LocationInfo>(`/api/odisha/locate?lat=${lat.toFixed(5)}&lon=${lon.toFixed(5)}`)
-        .then((l) => {
-          if (!l.in_odisha) {
-            toast.warning("SuryaJal is built for Odisha — tariffs, subsidies and rainwater rules " +
-              "are Odisha's. You can still explore, but the numbers won't apply here.")
-            return
-          }
-          toast.success(`You are here (±${Math.round(accuracy)} m) — ${l.district} district, ${l.discom}. Now tap your roof!`)
-        })
-        .catch(() => toast.success(`You are here (±${Math.round(accuracy)} m). Now tap your roof!`))
-    }, () => toast.warning("Could not get your location — allow location access, or search instead"),
-    { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 })
-  }
-
   // keyboard: Esc cancels, Enter finishes drawing, Ctrl+Z undoes
   useEffect(() => {
     if (!visible) return
@@ -439,7 +417,8 @@ export function MapPanel({ visible }: { visible: boolean }) {
               ? <>Zoom in to your house in <b>{g.district}</b> ({g.discom}) and <b>tap its roof</b> 👆</>
               : <>Zoom in to your house and <b>tap its roof</b> 👆</>)
           }}
-          onLatLon={(lat, lon) => mapRef.current?.flyTo([lat, lon], 19, { duration: 1.2 })} />
+          onLatLon={(lat, lon) => mapRef.current?.flyTo([lat, lon], 19, { duration: 1.2 })}
+          getBias={() => { const c = mapRef.current?.getCenter(); return c ? { lat: c.lat, lon: c.lng } : null }} />
         <div className="no-scrollbar flex max-w-full items-center gap-1.5 overflow-x-auto pb-0.5">
           {ODISHA_CITIES.map((c) => (
             <button key={c.name} type="button"
@@ -463,7 +442,7 @@ export function MapPanel({ visible }: { visible: boolean }) {
       {ctx.config && (
         <div className="absolute top-3 right-3 z-[500] hidden items-center gap-1.5 rounded-full bg-white/90 px-2.5 py-1.5 text-[11px] font-semibold text-sage-800 shadow sm:inline-flex">
           <span className={cn("size-2 rounded-full", ctx.config.engine === "mobilesam" ? "bg-emerald-500" : "bg-amber-500")} />
-          {ctx.config.engine === "mobilesam" ? "MobileSAM ready" : "OpenCV mode"}
+          {ctx.config.engine === "mobilesam" ? "High-accuracy AI" : "Basic AI"}
         </div>
       )}
 
@@ -553,30 +532,68 @@ function Chip({ children, on, onClick, tone }: { children: ReactNode; on?: boole
   )
 }
 
-function SearchBox({ onPick, onLatLon }: { onPick: (g: GeoResult) => void; onLatLon: (lat: number, lon: number) => void }) {
+function SearchBox({ onPick, onLatLon, getBias }: {
+  onPick: (g: GeoResult) => void
+  onLatLon: (lat: number, lon: number) => void
+  /** current map centre, used to rank nearby places first (like Google Maps) */
+  getBias?: () => { lat: number; lon: number } | null
+}) {
   const [q, setQ] = useState("")
   const [results, setResults] = useState<GeoResult[]>([])
   const [busy, setBusy] = useState(false)
+  const [hi, setHi] = useState(-1)
   const boxRef = useRef<HTMLFormElement>(null)
 
   useEffect(() => {
-    const close = (e: MouseEvent) => { if (!boxRef.current?.contains(e.target as Node)) setResults([]) }
+    const close = (e: MouseEvent) => {
+      if (!boxRef.current?.contains(e.target as Node)) { setResults([]); setHi(-1) }
+    }
     document.addEventListener("click", close)
     return () => document.removeEventListener("click", close)
   }, [])
+
+  // live suggestions while typing (like Google Maps); stale answers are dropped
+  useEffect(() => {
+    const text = q.trim()
+    if (text.length < 2) return
+    const ctl = new AbortController()
+    const t = setTimeout(async () => {
+      setBusy(true)
+      try {
+        const rows = await searchPlaces(text, { signal: ctl.signal, bias: getBias?.() ?? undefined })
+        if (!ctl.signal.aborted) { setResults(rows); setHi(-1) }
+      } catch {
+        if (!ctl.signal.aborted) setResults([])
+      } finally {
+        if (!ctl.signal.aborted) setBusy(false)
+      }
+    }, 250)
+    return () => { clearTimeout(t); ctl.abort() }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [q])
+
+  const setQuery = (v: string) => {
+    setQ(v)
+    if (v.trim().length < 2) { setResults([]); setHi(-1) }
+  }
+
+  const pick = (g: GeoResult) => { setQ(""); setResults([]); setHi(-1); onPick(g) }
 
   async function submit(e: FormEvent) {
     e.preventDefault()
     const text = q.trim()
     if (!text) return
     const m = text.match(/^\s*(-?\d{1,2}(?:\.\d+)?)\s*[,\s]\s*(-?\d{1,3}(?:\.\d+)?)\s*$/)
-    if (m) { setResults([]); onLatLon(+m[1], +m[2]); return }
+    if (m) { setResults([]); setHi(-1); onLatLon(+m[1], +m[2]); return }
+    if (hi >= 0 && results[hi]) return void pick(results[hi])
+    if (results.length) return void pick(results[0])
+    // nothing yet (paste + instant Enter): run the deep search now
     setBusy(true)
     try {
-      const res = await api<GeoResult[]>(`/api/geocode?q=${encodeURIComponent(text)}`)
-      if (!res.length) toast.warning("No place found — try a nearby landmark, area or PIN code")
-      else if (res.length === 1) { setResults([]); onPick(res[0]) }
-      else setResults(res)
+      const rows = await searchPlaces(text, { deep: true, bias: getBias?.() ?? undefined })
+      if (!rows.length) toast.warning("No place found — try a nearby landmark, area or PIN code")
+      else if (rows.length === 1) pick(rows[0])
+      else { setResults(rows); setHi(-1) }
     } catch (err) {
       toast.error((err as Error).message)
     } finally {
@@ -585,13 +602,21 @@ function SearchBox({ onPick, onLatLon }: { onPick: (g: GeoResult) => void; onLat
   }
 
   return (
-    <form ref={boxRef} onSubmit={submit} className="relative w-full" role="search" autoComplete="off">
+    <form ref={boxRef} onSubmit={submit} className="relative z-10 w-full" role="search" autoComplete="off">
       <div className="flex h-12 items-center gap-2 rounded-2xl border bg-card/95 pr-1.5 pl-3.5 shadow-lg backdrop-blur focus-within:ring-3 focus-within:ring-ring/40">
         <Search className="size-[18px] shrink-0 text-muted-foreground" />
-        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search a town, area or PIN code in Odisha…"
-          aria-label="Search a place" className="h-full min-w-0 flex-1 bg-transparent text-[15px] outline-none placeholder:text-muted-foreground" />
+        <input value={q} onChange={(e) => setQuery(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "ArrowDown") { e.preventDefault(); setHi((h) => Math.min(h + 1, results.length - 1)) }
+            else if (e.key === "ArrowUp") { e.preventDefault(); setHi((h) => Math.max(h - 1, -1)) }
+            else if (e.key === "Escape") { setResults([]); setHi(-1) }
+          }}
+          placeholder="Search a place, landmark or PIN code in Odisha…"
+          aria-label="Search a place" role="combobox" aria-expanded={results.length > 0}
+          aria-controls="sj-place-list" aria-autocomplete="list"
+          className="h-full min-w-0 flex-1 bg-transparent text-[15px] outline-none placeholder:text-muted-foreground" />
         {q && (
-          <button type="button" onClick={() => { setQ(""); setResults([]) }} className="grid size-8 place-items-center rounded-lg text-muted-foreground hover:bg-secondary" aria-label="Clear search">
+          <button type="button" onClick={() => { setQ(""); setResults([]); setHi(-1) }} className="grid size-8 place-items-center rounded-lg text-muted-foreground hover:bg-secondary" aria-label="Clear search">
             <X className="size-4" />
           </button>
         )}
@@ -600,23 +625,37 @@ function SearchBox({ onPick, onLatLon }: { onPick: (g: GeoResult) => void; onLat
         </button>
       </div>
       <AnimatePresence>
-        {results.length > 1 && (
-          <motion.ul initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }}
+        {(results.length > 0 || (busy && q.trim().length >= 2)) && (
+          <motion.ul id="sj-place-list" role="listbox" initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }}
             className="absolute inset-x-0 top-[3.4rem] max-h-80 overflow-auto rounded-2xl border bg-card p-1.5 shadow-2xl">
             {results.map((r, i) => {
               const [head, ...rest] = r.name.split(", ")
+              const sub = r.district
+                ? `${r.kind ?? "Place"} · ${r.district} district`
+                : `${r.kind ?? "Place"}${rest.length ? " · " : ""}${rest.slice(0, 3).join(", ")}`
               return (
-                <li key={i}>
-                  <button type="button" onClick={() => { setResults([]); onPick(r) }}
-                    className="flex w-full flex-col items-start rounded-xl px-3 py-2 text-left hover:bg-secondary">
-                    <span className="text-sm font-semibold">{head}</span>
-                    <span className="line-clamp-1 text-xs text-muted-foreground">
-                      {r.district ? `${r.district} district · ${r.discom} · ` : ""}{rest.slice(0, 3).join(", ")}
+                <li key={`${r.lat},${r.lon},${i}`} role="option" aria-selected={i === hi}>
+                  <button type="button" onClick={() => pick(r)} onMouseEnter={() => setHi(i)}
+                    className={cn(
+                      "flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-left transition-colors",
+                      i === hi ? "bg-secondary" : "hover:bg-secondary/60",
+                    )}>
+                    <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-secondary text-muted-foreground">
+                      <MapPin className="size-4" />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-semibold">{head}</span>
+                      <span className="block truncate text-xs text-muted-foreground">{sub}</span>
                     </span>
                   </button>
                 </li>
               )
             })}
+            {busy && results.length === 0 && (
+              <li className="flex items-center gap-2 px-3 py-2 text-sm text-muted-foreground">
+                <Loader2 className="size-4 animate-spin" /> Searching…
+              </li>
+            )}
           </motion.ul>
         )}
       </AnimatePresence>

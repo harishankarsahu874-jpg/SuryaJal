@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react"
 import { Link } from "react-router-dom"
 import { AnimatePresence, motion } from "motion/react"
-import { ChartColumn, Crosshair, Droplet, House, Sun } from "lucide-react"
+import { ChartColumn, Droplet, House, Sun } from "lucide-react"
 import { LogoMark } from "@/components/brand/logo"
 import { UserMenu } from "@/components/site/user-menu"
 import { MapPanel } from "@/features/dashboard/map-panel"
@@ -30,14 +30,14 @@ export default function DashboardPage() {
 }
 
 function Dashboard() {
-  const { tab, setTab, mapApi, assessing, roof, config } = useDashboard()
+  const { tab, setTab, assessing, roof, config } = useDashboard()
   const panelTab: Tab = tab === "map" ? "solar" : tab
   const scroller = useRef<HTMLDivElement>(null)
   useEffect(() => { scroller.current?.scrollTo({ top: 0 }) }, [panelTab])
 
   return (
     <div className="flex h-dvh flex-col overflow-hidden bg-background">
-      {/* header: logo tile · name · locate · account */}
+        {/* header: logo tile · name · account */}
       <header className="relative z-[1100] flex h-16 shrink-0 items-center gap-3 border-b bg-card/95 px-3 backdrop-blur sm:px-4">
         <Link to="/" className="flex min-w-0 items-center gap-2.5 rounded-xl" aria-label="SuryaJal home">
           <span className="grid size-11 place-items-center rounded-xl bg-secondary">
@@ -57,14 +57,12 @@ function Dashboard() {
         {config && (
           <span className="hidden items-center gap-1.5 rounded-full bg-secondary px-2.5 py-1 text-[11px] font-semibold text-secondary-foreground lg:inline-flex">
             <span className={cn("size-2 rounded-full", config.engine === "mobilesam" ? "bg-emerald-500" : "bg-amber-500")} />
-            {config.engine === "mobilesam" ? "MobileSAM ready" : "OpenCV mode"}
+            {config.engine === "mobilesam" ? "High-accuracy AI" : "Basic AI"}
           </span>
         )}
         <div className="ml-auto flex items-center gap-1.5">
-          <button type="button" onClick={() => { setTab("map"); setTimeout(() => mapApi.current?.locate(), 80) }}
-            className="grid size-10 place-items-center rounded-xl text-foreground/80 transition hover:bg-secondary" aria-label="Go to my location" title="My location">
-            <Crosshair className="size-5" />
-          </button>
+          {/* current location removed: browsers block GPS inside embedded previews
+              and broken promises look worse than no button - search finds any place */}
           <UserMenu compact />
         </div>
       </header>

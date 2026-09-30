@@ -49,7 +49,6 @@ export interface Inputs {
 }
 
 export interface MapApi {
-  locate: () => void
   flyTo: (lat: number, lon: number, zoom: number) => void
   invalidate: () => void
 }
