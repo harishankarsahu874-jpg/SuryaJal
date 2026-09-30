@@ -6,10 +6,10 @@ import { toast } from "sonner"
 import {
   ArrowRight, Check, Eraser, Loader2, MapPin, Minus, PenLine, Plus, RotateCcw, Search, Sparkles, Undo2, X,
 } from "lucide-react"
-import { api, type LocationInfo, type SegmentResponse } from "@/lib/api"
+import { api, type SegmentResponse } from "@/lib/api"
 import { searchPlaces, type GeoResult } from "@/lib/geosearch"
 import { captureCrop } from "@/lib/mapcrop"
-import { areaM2, INDIA_BOUNDS, inIndia, ODISHA_CENTER, ODISHA_CITIES, ODISHA_ZOOM, type LatLng } from "@/lib/geo"
+import { areaM2, INDIA_BOUNDS, ODISHA_CENTER, ODISHA_CITIES, ODISHA_ZOOM, type LatLng } from "@/lib/geo"
 import { EsriImagery } from "@/lib/imagery"
 import { fmtIN, litres, sqft } from "@/lib/format"
 import { cn } from "@/lib/utils"
@@ -29,16 +29,6 @@ function zoomFor(type: string) {
   if (type === "postcode") return 15
   if (type === "postcode_area") return 12
   return 17
-}
-
-/** Zoom that matches how precise a fix actually is (never pretend an IP is a rooftop). */
-function zoomForAccuracy(m: number) {
-  if (m < 100) return 18
-  if (m < 500) return 16
-  if (m < 2000) return 15
-  if (m < 10000) return 14
-  if (m < 40000) return 13
-  return 11
 }
 
 export function MapPanel({ visible }: { visible: boolean }) {
@@ -122,7 +112,6 @@ export function MapPanel({ visible }: { visible: boolean }) {
     })
 
     ctxRef.current.mapApi.current = {
-      locate: () => locate(),
       flyTo: (lat, lon, z) => map.flyTo([lat, lon], z, { duration: 1.2 }),
       invalidate: () => map.invalidateSize(),
     }
@@ -380,59 +369,6 @@ export function MapPanel({ visible }: { visible: boolean }) {
     }
     ctxRef.current.clearRoof()
     tick()
-  }
-
-  /** "My location": real GPS only - accurate or an honest one-liner. Embedded
-   *  previews can't ask for location at all (so the button isn't shown there),
-   *  and we never guess from internet IPs - a wrong "you are here" is worse than none. */
-  function locate() {
-    const map = mapRef.current, ly = layers.current
-    if (!map || !ly) return
-
-    const noFix = () => {
-      setHint(<>Search your place above (like <b>NIST University</b>), zoom to your house and <b>tap its roof</b></>)
-      toast.info("Couldn't read your location — search your place above instead.", { duration: 7000 })
-    }
-
-    const arrived = (lat: number, lon: number, accuracy: number) => {
-      if (!inIndia(lat, lon)) {
-        toast.warning("That spot is outside India — search your area or PIN code above instead.")
-        return
-      }
-      const zoom = zoomForAccuracy(accuracy)
-      map.flyTo([lat, lon], zoom, { duration: 1.2 })
-      if (ly.me) ly.me.remove()
-      if (ly.meC) ly.meC.remove()
-      ly.meC = L.circle([lat, lon], {
-        radius: Math.min(accuracy, 2000), color: "#38BDF8", weight: 1.5,
-        fillColor: "#38BDF8", fillOpacity: 0.12, interactive: false,
-      }).addTo(map)
-      ly.me = L.marker([lat, lon], { icon: divIcon("sj-me"), interactive: false }).addTo(map)
-      setHint(<>You're here — zoom to your house and <b>tap its roof</b> 👆</>)
-      const acc = accuracy >= 1000 ? `±${Math.round(accuracy / 1000)} km` : `±${Math.round(accuracy)} m`
-      api<LocationInfo>(`/api/odisha/locate?lat=${lat.toFixed(5)}&lon=${lon.toFixed(5)}`)
-        .then((l) => toast.success(`You are here ${acc}.${l.in_odisha ? ` ${l.district}, ${l.discom}.` : ""} Now tap your roof!`))
-        .catch(() => toast.success(`You are here ${acc}. Now tap your roof!`))
-    }
-
-    if (!navigator.geolocation) return void noFix()
-    setHint(<>Checking your location — click <b>Allow</b> if the browser asks</>, true)
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        const { latitude: lat, longitude: lon, accuracy } = pos.coords
-        if (!isFinite(lat) || !isFinite(lon) || (Math.abs(lat) < 0.5 && Math.abs(lon) < 0.5)) return void noFix()
-        arrived(lat, lon, Math.max(5, accuracy || 30))
-      },
-      (err) => {
-        if (err?.code === 1) {   // permission blocked: say the real fix, no dead ends
-          setHint(<>Allow location for this site (tap the <b>lock / ⓘ</b> near the address bar), then tap 📍 again</>)
-          toast.warning("Your browser is blocking location — tap the lock / ⓘ near the address bar, set Location to Allow, and try again.", {
-            duration: 12000, action: { label: "Try again", onClick: () => locate() },
-          })
-        } else noFix()
-      },
-      { enableHighAccuracy: true, timeout: 25000, maximumAge: 60000 },
-    )
   }
 
   // keyboard: Esc cancels, Enter finishes drawing, Ctrl+Z undoes
