@@ -83,6 +83,25 @@ async function ipLocate(): Promise<{ lat: number; lon: number; city: string | nu
   return clusters[0].slice().sort((x, y) => x.accuracyKm - y.accuracyKm)[0]
 }
 
+/** The place the user last chose (search pick / city chip / real GPS fix).
+ *  When location can't run (embedded preview), the 📍 button goes back there
+ *  instead of showing broken promises. */
+type SavedPlace = { lat: number; lon: number; name: string; z: number }
+
+function rememberPlace(lat: number, lon: number, name: string, z: number) {
+  try { localStorage.setItem("sj.place", JSON.stringify({ lat, lon, name, z })) } catch { /* private mode */ }
+}
+
+function readPlace(): SavedPlace | null {
+  try {
+    const raw = localStorage.getItem("sj.place")
+    if (!raw) return null
+    const p = JSON.parse(raw) as SavedPlace
+    return isFinite(p?.lat) && isFinite(p?.lon) && typeof p?.name === "string" && inIndia(p.lat, p.lon)
+      ? { ...p, z: isFinite(p.z) ? p.z : 15 } : null
+  } catch { return null }
+}
+
 /** Opens at most one "find my location" tab per app load (preview flow). */
 let locateTabOpened = false
 
@@ -473,10 +492,6 @@ export function MapPanel({ visible }: { visible: boolean }) {
       } catch { /* popup blocked by the embedder */ }
       return false
     }
-    const copyLink = () => {
-      void navigator.clipboard?.writeText(window.location.href).catch(() => {})
-      toast.info("Link copied — open it in your browser, then tap the 📍 button again.")
-    }
 
     const giveUp = (why: "blocked" | "denied" | "failed") => {
       if (why === "failed") {
@@ -500,9 +515,16 @@ export function MapPanel({ visible }: { visible: boolean }) {
           })
           return
         }
-        setHint(<span>Location is off here — <button type="button" onClick={() => (openTab() || copyLink())}
-          className="font-semibold text-amber-200 underline underline-offset-2">open in a new tab</button> to use it, or search above</span>)
-        copyLink()
+        // popups are blocked here too - go back to the place the user already chose
+        const saved = readPlace()
+        if (saved) {
+          map.flyTo([saved.lat, saved.lon], saved.z, { duration: 1.2 })
+          setHint(<>Zoom to your house and <b>tap its roof</b> 👆</>)
+          toast.info(`Location is off in this preview — back to ${saved.name}.`, { duration: 7000 })
+          return
+        }
+        setHint(<>Search your place above (like <b>NIST University</b>), zoom to your house and <b>tap its roof</b></>)
+        toast.info("Location is off in this preview — search your place above instead.", { duration: 7000 })
         return
       }
       // real tab: the site's location permission is switched off in the browser
@@ -519,6 +541,7 @@ export function MapPanel({ visible }: { visible: boolean }) {
       }
       const zoom = opts.approx ? zoomForAccuracy(opts.accuracy) : 19
       map.flyTo([lat, lon], zoom, { duration: 1.2 })
+      rememberPlace(lat, lon, "your last location", zoom)
       if (ly.me) ly.me.remove()
       if (ly.meC) ly.meC.remove()
       // honest accuracy circle: GPS = metres, IP fix = kilometres
@@ -606,7 +629,9 @@ export function MapPanel({ visible }: { visible: boolean }) {
       {/* search + hint */}
       <div className="absolute inset-x-3 top-3 z-[500] flex flex-col items-start gap-2 sm:left-4 sm:right-auto sm:w-[min(400px,calc(100%-2rem))]">
         <SearchBox onPick={(g) => {
-            mapRef.current?.flyTo([g.lat, g.lon], zoomFor(g.type), { duration: 1.2 })
+            const z = zoomFor(g.type)
+            mapRef.current?.flyTo([g.lat, g.lon], z, { duration: 1.2 })
+            rememberPlace(g.lat, g.lon, g.name.split(",")[0], z)
             setHint(g.discom
               ? <>Zoom in to your house in <b>{g.district}</b> ({g.discom}) and <b>tap its roof</b> 👆</>
               : <>Zoom in to your house and <b>tap its roof</b> 👆</>)
@@ -616,7 +641,7 @@ export function MapPanel({ visible }: { visible: boolean }) {
         <div className="no-scrollbar flex max-w-full items-center gap-1.5 overflow-x-auto pb-0.5">
           {ODISHA_CITIES.map((c) => (
             <button key={c.name} type="button"
-              onClick={() => { mapRef.current?.flyTo([c.lat, c.lon], c.zoom, { duration: 1.1 }); setHint(<>Zoom in to your house and <b>tap its roof</b> 👆</>) }}
+              onClick={() => { mapRef.current?.flyTo([c.lat, c.lon], c.zoom, { duration: 1.1 }); rememberPlace(c.lat, c.lon, c.name, c.zoom); setHint(<>Zoom in to your house and <b>tap its roof</b> 👆</>) }}
               className="shrink-0 rounded-full bg-white/90 px-2.5 py-1 text-[11px] font-semibold text-sage-800 shadow backdrop-blur hover:bg-white">
               {c.name}
             </button>
