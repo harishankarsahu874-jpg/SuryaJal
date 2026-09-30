@@ -141,8 +141,7 @@ async def run_assessment(req: AssessIn) -> dict:
     layout = await run_in_threadpool(auto_layout, poly, None, params)
     solar = assess_solar(area, climate, params, layout_max_panels=layout["max_panels"])
     rain = assess_rain(area, climate, params)
-    score = green_score(solar["coverage"], rain["coverage"], solar["panels"] > 0,
-                        rain["meets_rule"])
+    score = green_score(solar, rain)
     panels = layout["panels"][: solar["panels"]][:400]
     rid = hashlib.sha1(json.dumps([encode_polyline(poly), params], sort_keys=True,
                                   default=str).encode()).hexdigest()[:8].upper()

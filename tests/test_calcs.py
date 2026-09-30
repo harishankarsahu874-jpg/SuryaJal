@@ -308,13 +308,37 @@ def test_assess_rain_reports_chhata_for_the_roof():
 
 
 # ------------------------------------------------------------------ green score
-def test_green_score_bounds():
-    assert green_score(1.0, 1.0, True, True)["score"] == 100
-    assert green_score(0.0, 0.0, False, False)["score"] == 0
-    assert green_score(0.5, 0.3, True, False) == {"score": 45, "grade": "C", "solar_pts": 28,
-                                                  "water_pts": 18, "rule_pts": 0}
-    top = green_score(1.0, 1.0, True, True)
+def test_green_score_honest_and_location_sensitive():
+    """Not a constant 100/A+ anymore - the score moves with the place (sun, rain)
+    and the roof (coverage, payback, months the rain alone meets demand)."""
+    # genuinely exceptional: everything maxed -> a real 100
+    top = green_score({"panels": 6, "coverage": 1.2, "specific_yield": 1520.0, "payback_years": 1.0},
+                      {"coverage": 2.0, "annual_rain_mm": 1850.0, "meets_rule": True,
+                       "monthly_harvest_l": [5000] * 12, "monthly_demand_l": [1000] * 12})
+    assert top["score"] == 100 and top["grade"] == "A+"
     assert (top["solar_pts"], top["water_pts"], top["rule_pts"]) == (55, 35, 10)
+
+    # no panels, no rain, no rule -> zero
+    zero = green_score({"panels": 0, "coverage": 0.0, "specific_yield": 1300.0, "payback_years": None},
+                       {"coverage": 0.0, "annual_rain_mm": 900.0, "meets_rule": False,
+                        "monthly_harvest_l": [0] * 12, "monthly_demand_l": [1000] * 12})
+    assert zero == {"score": 0, "grade": "D", "solar_pts": 0, "water_pts": 0, "rule_pts": 0}
+
+    # the SAME fully-covering roof in a drier, less sunny, slower-payback corner
+    # of Odisha scores visibly lower - 100 is not for everyone
+    dry = green_score({"panels": 6, "coverage": 1.0, "specific_yield": 1330.0, "payback_years": 5.0},
+                      {"coverage": 1.0, "annual_rain_mm": 1335.0, "meets_rule": True,
+                       "monthly_harvest_l": [12000, 12000, 900, 12000, 12000, 12000, 12000,
+                                             12000, 12000, 900, 800, 700],
+                       "monthly_demand_l": [1000] * 12})
+    assert 70 <= dry["score"] <= 85 and dry["grade"] == "B"
+    assert dry["score"] < top["score"] and dry["water_pts"] < top["water_pts"]
+
+    # a roof too small for panels can't score solar points however sunny the place
+    tiny = green_score({"panels": 0, "coverage": 0.0, "specific_yield": 1520.0, "payback_years": 1.0},
+                       {"coverage": 3.0, "annual_rain_mm": 1850.0, "meets_rule": True,
+                        "monthly_harvest_l": [5000] * 12, "monthly_demand_l": [1000] * 12})
+    assert tiny["solar_pts"] == 0 and tiny["score"] == top["score"] - 55
 
 
 # ------------------------------------------------------------------ geometry

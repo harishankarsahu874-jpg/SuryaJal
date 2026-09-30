@@ -31,6 +31,22 @@ def test_assess(client):
     assert a["rain"]["annual_harvest_l"] > 0 and 0 <= a["score"]["score"] <= 100
 
 
+def test_green_score_changes_with_location(client):
+    """The same roof must NOT score the same everywhere (the old score was a
+    constant 100/A+ for every location and search)."""
+    clat = sum(p[0] for p in ROOF) / len(ROOF)
+    clon = sum(p[1] for p in ROOF) / len(ROOF)
+
+    def at(lat, lon):
+        return [[p[0] - clat + lat, p[1] - clon + lon] for p in ROOF]
+
+    coastal = client.post("/api/assess", json={"polygon": at(20.26, 86.61), "monthly_units": 300}).json()  # Paradeep ~1850 mm
+    inland = client.post("/api/assess", json={"polygon": at(20.05, 83.16), "monthly_units": 300}).json()   # Bhawanipatna ~1335 mm
+    assert coastal["score"]["score"] != inland["score"]["score"]
+    assert coastal["score"]["water_pts"] > inland["score"]["water_pts"]   # rainier place scores higher
+    assert inland["score"]["score"] < 100                                # 100 is not for everyone
+
+
 def test_assess_rejects_bad_input(client):
     assert client.post("/api/assess", json={"polygon": ROOF[:2]}).status_code == 422
     assert client.post("/api/assess", json={"polygon": ROOF, "family_size": 0}).status_code == 422
