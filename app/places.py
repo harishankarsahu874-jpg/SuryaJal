@@ -65,7 +65,7 @@ def in_india(lat: float, lon: float) -> bool:
 # Major Odisha institutions & landmarks - the places people actually type in
 # ("NIST", "KIIT", "Jagannath Temple"…). Name, lat, lon, extra search keys.
 LANDMARKS: List[Tuple[str, float, float, List[str]]] = [
-    ("NIST University, Berhampur", 19.1868, 84.7529,
+    ("NIST University, Berhampur", 19.1983, 84.7459,   # Palur Hill (OSM), the campus hills
      ["nist", "nist university", "nist berhampur", "national institute of science and technology"]),
     ("Berhampur University", 19.2992, 84.8816, ["berhampur university", "brahmapur university"]),
     ("MKCG Medical College, Berhampur", 19.3145, 84.8063, ["mkcg", "mkcg medical college"]),

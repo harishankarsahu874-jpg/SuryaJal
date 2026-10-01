@@ -28,6 +28,7 @@ function zoomFor(type: string) {
   if (["city", "town", "administrative", "county", "state_district"].includes(type)) return 13
   if (type === "postcode") return 15
   if (type === "postcode_area") return 12
+  if (type === "poi") return 18          // landmarks: campus / temple level
   return 17
 }
 
@@ -44,6 +45,16 @@ export function MapPanel({ visible }: { visible: boolean }) {
     roof: L.Polygon; panels: L.LayerGroup; handles: L.LayerGroup; prompts: L.LayerGroup; draw: L.LayerGroup
     tip: L.Tooltip; rubber: L.Polyline | null; pulse: L.Marker | null; me: L.Marker | null; meC: L.Circle | null
   } | null>(null)
+  // the labelled pin showing "where am I" after a search / city pick
+  const placePin = useRef<L.Marker | null>(null)
+  const dropPlacePin = (lat: number, lon: number, name: string) => {
+    const map = mapRef.current
+    if (!map) return
+    placePin.current?.remove()
+    placePin.current = L.marker([lat, lon], { icon: divIcon("sj-place-pin"), interactive: false })
+      .addTo(map)
+      .bindTooltip(name, { permanent: true, direction: "top", className: "sj-place-label", offset: [0, -14] })
+  }
   // interaction state lives in a ref (Leaflet handlers are registered once) + a tick to re-render the UI
   const S = useRef({ mode: "ai" as "ai" | "draw", busy: false, aiPoints: [] as SegPoint[], refine: null as 0 | 1 | null,
     drawPts: [] as LatLng[], zoom: ODISHA_ZOOM }).current
@@ -412,17 +423,23 @@ export function MapPanel({ visible }: { visible: boolean }) {
       {/* search + hint */}
       <div className="absolute inset-x-3 top-3 z-[500] flex flex-col items-start gap-2 sm:left-4 sm:right-auto sm:w-[min(400px,calc(100%-2rem))]">
         <SearchBox onPick={(g) => {
+            const name = g.name.split(", ").slice(0, 2).join(", ")
             mapRef.current?.flyTo([g.lat, g.lon], zoomFor(g.type), { duration: 1.2 })
+            dropPlacePin(g.lat, g.lon, name)
             setHint(g.discom
-              ? <>Zoom in to your house in <b>{g.district}</b> ({g.discom}) and <b>tap its roof</b> 👆</>
-              : <>Zoom in to your house and <b>tap its roof</b> 👆</>)
+              ? <>Now at <b>{name}</b> — zoom to your house in {g.district} ({g.discom}) and <b>tap its roof</b> 👆</>
+              : <>Now at <b>{name}</b> — zoom to your house and <b>tap its roof</b> 👆</>)
           }}
-          onLatLon={(lat, lon) => mapRef.current?.flyTo([lat, lon], 19, { duration: 1.2 })}
+          onLatLon={(lat, lon) => {
+            mapRef.current?.flyTo([lat, lon], 19, { duration: 1.2 })
+            dropPlacePin(lat, lon, "Your spot")
+            setHint(<>Zoom to your house and <b>tap its roof</b> 👆</>)
+          }}
           getBias={() => { const c = mapRef.current?.getCenter(); return c ? { lat: c.lat, lon: c.lng } : null }} />
         <div className="no-scrollbar flex max-w-full items-center gap-1.5 overflow-x-auto pb-0.5">
           {ODISHA_CITIES.map((c) => (
             <button key={c.name} type="button"
-              onClick={() => { mapRef.current?.flyTo([c.lat, c.lon], c.zoom, { duration: 1.1 }); setHint(<>Zoom in to your house and <b>tap its roof</b> 👆</>) }}
+              onClick={() => { mapRef.current?.flyTo([c.lat, c.lon], c.zoom, { duration: 1.1 }); dropPlacePin(c.lat, c.lon, c.name); setHint(<>Now at <b>{c.name}</b> — zoom to your house and <b>tap its roof</b> 👆</>) }}
               className="shrink-0 rounded-full bg-white/90 px-2.5 py-1 text-[11px] font-semibold text-sage-800 shadow backdrop-blur hover:bg-white">
               {c.name}
             </button>
@@ -436,15 +453,6 @@ export function MapPanel({ visible }: { visible: boolean }) {
           <span className="truncate [&_b]:font-semibold [&_b]:text-amber-200">{hint.html}</span>
         </div>
       </div>
-
-      {/* engine badge (mobile/tablet only — on desktop the map is narrower, so the
-          engine status lives in the dashboard header instead) */}
-      {ctx.config && (
-        <div className="absolute top-3 right-3 z-[500] hidden items-center gap-1.5 rounded-full bg-white/90 px-2.5 py-1.5 text-[11px] font-semibold text-sage-800 shadow sm:inline-flex">
-          <span className={cn("size-2 rounded-full", ctx.config.engine === "mobilesam" ? "bg-emerald-500" : "bg-amber-500")} />
-          {ctx.config.engine === "mobilesam" ? "High-accuracy AI" : "Basic AI"}
-        </div>
-      )}
 
       {/* bottom stack: refine chips, toolbar, roof summary */}
       <div ref={stackRef} className="pointer-events-none absolute inset-x-0 bottom-3 z-[500] flex flex-col items-center gap-2 px-3 lg:bottom-6 [&>*]:pointer-events-auto">

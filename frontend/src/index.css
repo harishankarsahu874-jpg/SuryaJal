@@ -200,6 +200,9 @@
 .sj-me { width: 16px; height: 16px; margin: -8px 0 0 -8px; border-radius: 50%; background: #3b82f6; border: 3px solid #fff; box-shadow: 0 0 0 6px rgba(59,130,246,.3); }
 .sj-area-tip.leaflet-tooltip { background: rgba(24,34,28,.88); color: #fff; border: 0; border-radius: 999px; font-weight: 700; padding: 4px 10px; box-shadow: none; font-family: var(--font-sans); }
 .sj-area-tip.leaflet-tooltip::before { display: none; }
+.sj-place-pin { width: 16px; height: 16px; margin: -8px 0 0 -8px; border-radius: 50%; background: #ef4444; border: 3px solid #fff; box-shadow: 0 3px 12px rgba(0,0,0,.5); }
+.sj-place-label.leaflet-tooltip { background: rgba(24,34,28,.92); color: #fff; border: 0; border-radius: 10px; font-weight: 700; font-size: 12.5px; padding: 6px 11px; box-shadow: 0 6px 18px rgba(0,0,0,.35); font-family: var(--font-sans); white-space: nowrap; }
+.sj-place-label.leaflet-tooltip::before { display: none; }
 .leaflet-container { font-family: var(--font-sans); background: #18221c; }
 .leaflet-control-zoom a, .leaflet-control-layers { border-radius: 12px !important; }
 .leaflet-bar { border: 0 !important; box-shadow: 0 4px 14px rgba(0,0,0,.25) !important; border-radius: 12px !important; overflow: hidden; }

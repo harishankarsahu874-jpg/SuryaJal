@@ -160,7 +160,7 @@ def test_suggest_landmarks_nist_first(client):
     """"NIST UNIVERSITY" must find NIST Berhampur (Palur Hills), not foreign universities."""
     r = client.get("/api/suggest", params={"q": "NIST UNIVERSITY"}).json()
     assert r and "NIST" in r[0]["name"] and r[0]["type"] == "poi"
-    assert abs(r[0]["lat"] - 19.1868) < 0.02 and abs(r[0]["lon"] - 84.7529) < 0.02
+    assert abs(r[0]["lat"] - 19.1983) < 0.02 and abs(r[0]["lon"] - 84.7459) < 0.02
     r = client.get("/api/suggest", params={"q": "nist"}).json()
     assert "NIST" in r[0]["name"]
     # the campus PIN code resolves to the same area (Palur Hills / Golanthara)
@@ -228,6 +228,30 @@ def test_segment_with_browser_image(client):
     assert r.status_code == 200
     d = r.json()
     assert d["ok"] is True and len(d["polygon"]) >= 3 and d["area_m2"] > 0
+
+
+def test_segment_rejects_ponds_and_fields(client):
+    """The AI must not pretend a fish pond or a green field is a roof (it used to
+    happily outline aquaculture ponds)."""
+    import base64
+    import io
+
+    import numpy as np
+    from PIL import Image
+    from app.geo import latlon_to_px
+
+    rng = np.random.default_rng(1)
+    # BGR image that is unmistakably greenery: G clearly dominant
+    green = (rng.normal(0, 7, (512, 512, 3)) + np.array([60.0, 130.0, 70.0])).clip(0, 255).astype(np.uint8)
+    buf = io.BytesIO()
+    Image.fromarray(green).save(buf, format="PNG")
+    gx, gy = latlon_to_px(20.2961, 85.8245, 18)
+    r = client.post("/api/segment", json={
+        "points": [{"lat": 20.2961, "lon": 85.8245, "label": 1}],
+        "zoom": 18, "image": base64.b64encode(buf.getvalue()).decode(),
+        "origin": [int(gx - 256), int(gy - 256)], "z": 18,
+    }).json()
+    assert r["ok"] is False and "not a roof" in r["message"]
 
 
 def test_segment_image_needs_full_geometry(client):

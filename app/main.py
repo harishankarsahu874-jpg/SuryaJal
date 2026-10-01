@@ -40,7 +40,7 @@ from .layout import auto_layout
 from .rain import RULE_NAME, RULE_SHORT, assess_rain, green_score
 from . import pincode, places
 from .report import build_report_pdf, qr_svg, roof_thumbnail
-from .segment import RoofSegmenter, mask_to_polygon
+from .segment import RoofSegmenter, classify_surface, mask_to_polygon
 from .solar import assess_solar, odisha_state_subsidy, pm_surya_ghar_subsidy
 from .tariff import TARIFF_LABEL, monthly_bill, slab_table
 from .tiles import TileFetcher, decode_crop_b64
@@ -501,6 +501,11 @@ async def segment(req: SegmentIn):
     poly_px, touches = mask_to_polygon(res["mask"])
     if poly_px is None:
         return {"ok": False, "message": "No roof found at that spot - tap the middle of the roof, "
+                                        "or use ‘Draw manually’."}
+    surface = classify_surface(crop["img"], res["mask"])
+    if surface != "built":
+        what = "a water body" if surface == "water" else "greenery / a field"
+        return {"ok": False, "message": f"That looks like {what}, not a roof — tap a building rooftop, "
                                         "or use ‘Draw manually’."}
     ll = [px_to_latlon(gx0 + x, gy0 + y, z) for x, y in poly_px]
     area = polygon_area_m2(ll)

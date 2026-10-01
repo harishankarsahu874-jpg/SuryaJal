@@ -30,7 +30,7 @@ export default function DashboardPage() {
 }
 
 function Dashboard() {
-  const { tab, setTab, assessing, roof, config } = useDashboard()
+  const { tab, setTab, assessing, roof } = useDashboard()
   const panelTab: Tab = tab === "map" ? "solar" : tab
   const scroller = useRef<HTMLDivElement>(null)
   useEffect(() => { scroller.current?.scrollTo({ top: 0 }) }, [panelTab])
@@ -53,13 +53,6 @@ function Dashboard() {
             </motion.span>
           )}
         </AnimatePresence>
-        {/* AI engine status (desktop) — on phones it is shown on the map instead */}
-        {config && (
-          <span className="hidden items-center gap-1.5 rounded-full bg-secondary px-2.5 py-1 text-[11px] font-semibold text-secondary-foreground lg:inline-flex">
-            <span className={cn("size-2 rounded-full", config.engine === "mobilesam" ? "bg-emerald-500" : "bg-amber-500")} />
-            {config.engine === "mobilesam" ? "High-accuracy AI" : "Basic AI"}
-          </span>
-        )}
         <div className="ml-auto flex items-center gap-1.5">
           {/* current location removed: browsers block GPS inside embedded previews
               and broken promises look worse than no button - search finds any place */}

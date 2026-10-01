@@ -341,6 +341,22 @@ def test_green_score_honest_and_location_sensitive():
     assert tiny["solar_pts"] == 0 and tiny["score"] == top["score"] - 55
 
 
+# ------------------------------------------------------------------ surface check
+def test_classify_surface_ponds_and_fields():
+    import numpy as np
+    from app.segment import classify_surface
+
+    green = np.zeros((64, 64, 3), np.uint8) + np.array([60, 130, 70], np.uint8)   # BGR vegetation
+    water = np.zeros((64, 64, 3), np.uint8) + np.array([110, 80, 60], np.uint8)   # dark blue water
+    tile = np.zeros((64, 64, 3), np.uint8) + np.array([80, 110, 200], np.uint8)   # terracotta roof
+    grey = np.zeros((64, 64, 3), np.uint8) + np.array([150, 150, 150], np.uint8)  # concrete roof
+    m = np.ones((64, 64), bool)
+    assert classify_surface(green, m) == "vegetation"
+    assert classify_surface(water, m) == "water"
+    assert classify_surface(tile, m) == "built"
+    assert classify_surface(grey, m) == "built"
+
+
 # ------------------------------------------------------------------ geometry
 def test_mercator_roundtrip():
     for lat, lon in [(20.2961, 85.8245), (22.26, 84.84), (-33.9, 151.2)]:
