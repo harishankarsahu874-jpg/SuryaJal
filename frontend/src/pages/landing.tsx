@@ -5,6 +5,7 @@ import { ArrowRight, Droplets, ScanLine, SolarPanel, Sparkles } from "lucide-rea
 import StackSpread from "@/components/ui/stack-spread"
 import { SiteFooter, SiteHeader } from "@/components/site/site-chrome"
 import { Button } from "@/components/ui/button"
+import { CallToActionBand, ReportSection, SolarRainwaterSection, UnderTheHoodSection } from "@/features/landing/landing-sections"
 import { cn } from "@/lib/utils"
 
 export default function LandingPage({ onReplayIntro }: { onReplayIntro: () => void }) {
@@ -26,7 +27,10 @@ export default function LandingPage({ onReplayIntro }: { onReplayIntro: () => vo
           </Button>
         }
       />
-      <CtaBand />
+      <SolarRainwaterSection />
+      <ReportSection />
+      <UnderTheHoodSection />
+      <CallToActionBand />
       <SiteFooter onReplayIntro={onReplayIntro} />
     </div>
   )
@@ -135,22 +139,5 @@ function FloatChip({ icon: Icon, title, value, tone, delay }: {
         <span className="block text-[11px] text-muted-foreground">{value}</span>
       </span>
     </div>
-  )
-}
-
-// ------------------------------------------------------------------ close
-function CtaBand() {
-  return (
-    <section className="px-4 py-20 sm:px-6">
-      <div className="relative mx-auto max-w-6xl overflow-hidden rounded-[2rem] bg-sage-900 px-6 py-14 text-center text-white sm:px-12">
-        <div aria-hidden className="absolute -top-24 left-1/2 size-[520px] -translate-x-1/2 rounded-full bg-[radial-gradient(circle,rgba(233,162,59,.25),transparent_60%)]" />
-        <h2 className="font-heading relative text-4xl font-medium tracking-tight sm:text-5xl">Your roof is waiting.</h2>
-        <div className="relative mt-8 flex justify-center">
-          <Button asChild className="h-12 rounded-xl bg-white px-6 text-[15px] font-semibold text-sage-900 hover:bg-sage-100">
-            <Link to="/app">Check my roof <ArrowRight /></Link>
-          </Button>
-        </div>
-      </div>
-    </section>
   )
 }

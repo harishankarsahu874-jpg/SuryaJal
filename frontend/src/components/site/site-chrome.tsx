@@ -42,22 +42,44 @@ export function SiteHeader({ transparent = false }: { transparent?: boolean }) {
 
 export function SiteFooter({ onReplayIntro }: { onReplayIntro?: () => void }) {
   return (
-    <footer className="border-t bg-card">
-      <div className="mx-auto flex max-w-6xl flex-col items-center gap-3 px-4 py-6 text-xs text-muted-foreground sm:flex-row sm:justify-between sm:px-6">
-        <span className="inline-flex items-center gap-2"><LogoMark className="size-5" /> © 2026 SuryaJal</span>
-        <nav className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1.5 font-medium">
-          <Link className="hover:text-foreground" to="/app">Roof dashboard</Link>
-          <Link className="hover:text-foreground" to="/app?demo=1">Demo roof</Link>
-          <Link className="hover:text-foreground" to="/account">My roofs</Link>
-          <a className="hover:text-foreground" href="/classic">Classic tool</a>
-          {onReplayIntro && (
-            <button type="button" className="hover:text-foreground" onClick={onReplayIntro}>Replay intro</button>
-          )}
-        </nav>
+    <footer className="border-t border-border/80 bg-card">
+      <div className="mx-auto grid max-w-6xl gap-9 px-4 py-12 sm:px-6 sm:py-14 md:grid-cols-[1.2fr_0.72fr_1fr] md:gap-10">
+        <div>
+          <Link to="/" className="inline-flex items-center gap-2.5 rounded-xl" aria-label="SuryaJal home">
+            <LogoMark className="size-11" />
+            <span className="font-heading text-xl font-semibold tracking-tight">Surya<span className="text-water">Jal</span></span>
+          </Link>
+          <p className="mt-4 max-w-sm text-sm leading-relaxed text-muted-foreground">
+            A free screening tool built by the college Renewable Energy Club for Tech Fest 2026. Get a site survey from an MNRE-empanelled vendor before you buy.
+          </p>
+        </div>
+
+        <div>
+          <h2 className="text-sm font-semibold text-foreground">Product</h2>
+          <nav aria-label="Footer product links" className="mt-3 grid justify-items-start gap-2.5 text-sm text-muted-foreground">
+            <Link className="transition-colors hover:text-foreground" to="/app">Roof dashboard</Link>
+            <Link className="transition-colors hover:text-foreground" to="/app?demo=1">Demo roof</Link>
+            <Link className="transition-colors hover:text-foreground" to="/account">My roofs</Link>
+            <a className="transition-colors hover:text-foreground" href="/classic">Classic tool (no-build fallback)</a>
+            {onReplayIntro && (
+              <button type="button" className="transition-colors hover:text-foreground" onClick={onReplayIntro}>Replay intro</button>
+            )}
+          </nav>
+        </div>
+
+        <div>
+          <h2 className="text-sm font-semibold text-foreground">Data &amp; credits</h2>
+          <ul className="mt-3 grid gap-2.5 text-sm leading-relaxed text-muted-foreground">
+            <li>Climate: NASA POWER</li>
+            <li>Imagery © Esri, Maxar, Earthstar Geographics</li>
+            <li>Search © OpenStreetMap contributors</li>
+            <li>Photos: Unsplash (Unsplash License)</li>
+          </ul>
+        </div>
       </div>
-      <div className="border-t">
+      <div className="border-t border-border/80">
         <p className="mx-auto max-w-6xl px-4 py-3 text-[11px] text-muted-foreground/80 sm:px-6">
-          Climate: NASA POWER · Imagery © Esri, Maxar, Earthstar Geographics · Search © OpenStreetMap contributors · Photos: Unsplash
+          © 2026 SuryaJal · A free screening estimate — confirm costs and eligibility with your DISCOM and an empanelled vendor.
         </p>
       </div>
     </footer>
