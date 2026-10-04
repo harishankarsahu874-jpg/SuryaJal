@@ -14,7 +14,7 @@ import os
 from pathlib import Path
 
 APP_NAME = "SuryaJal"
-APP_VERSION = "2.0.0"
+APP_VERSION = "2.0.1"
 APP_TAGLINE = "Odisha rooftop solar + rainwater planner"
 
 # ------------------------------------------------------------------ the state we serve
