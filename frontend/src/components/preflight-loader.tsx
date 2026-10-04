@@ -187,30 +187,6 @@ export function PreflightLoader({ onDone }: { onDone: () => void }) {
         </div>
       </div>
 
-      <motion.h1
-        className="font-heading mt-6 flex text-4xl font-semibold tracking-[-0.03em] sm:text-5xl"
-        aria-label="SuryaJal"
-      >
-        {"SuryaJal".split("").map((ch, i) => (
-          <motion.span
-            key={i}
-            className={i >= 5 ? "text-sky-300" : "text-white"}
-            initial={{ opacity: 0, y: reduce ? 0 : 14 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: reduce ? 0 : 0.5 + i * 0.05, duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
-          >
-            {ch}
-          </motion.span>
-        ))}
-      </motion.h1>
-      <motion.p
-        className="mt-2 text-[11px] font-semibold tracking-[0.32em] text-sage-300 uppercase"
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ delay: reduce ? 0 : 0.95 }}
-      >
-        Sun + rain, measured from space
-      </motion.p>
     </motion.div>
   )
 }

@@ -694,6 +694,13 @@ def roofs_delete(roof_id: int, user: dict = Depends(auth.current_user)):
 # ------------------------------------------------------------------ pages (React site + classic tool)
 CLASSIC_HTML = STATIC_DIR / "index.html"
 SPA_ROUTES = {"", "app", "login", "signup", "account", "demo"}
+# The shell HTML must never be cached: a stale copy pins old hashed assets and
+# the user keeps seeing an outdated app forever.
+NO_CACHE = {
+    "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+    "Pragma": "no-cache",
+    "Expires": "0",
+}
 
 
 @app.get("/classic", include_in_schema=False)
@@ -718,6 +725,6 @@ async def site(path: str, request: Request):
             return FileResponse(f, headers={"Cache-Control": cache})
     index = root / "index.html"
     if not index.exists():                                      # site not built -> classic tool
-        return FileResponse(CLASSIC_HTML, headers={"Cache-Control": "no-store"})
+        return FileResponse(CLASSIC_HTML, headers=NO_CACHE)
     return FileResponse(index, status_code=200 if clean in SPA_ROUTES else 404,
-                        headers={"Cache-Control": "no-store"})
+                        headers=NO_CACHE)
