@@ -158,16 +158,49 @@ def assess_rain(roof_area_m2: float, climate: Dict, p: Dict) -> Dict:
     }
 
 
-def green_score(solar_coverage: float, water_coverage: float, has_solar: bool,
-                meets_rule: bool = False) -> Dict:
-    """0-100: 55 points for covering the home's electricity with rooftop solar,
-    35 for rainwater (covering 60 % of the yearly water demand earns full marks) and
-    10 for meeting the Odisha recharge rule (6 m3 per 100 m2 of roof)."""
-    s = 55.0 * min(1.0, solar_coverage if has_solar else 0.0)
-    w = 35.0 * min(1.0, water_coverage / 0.6)
-    r = 10.0 if meets_rule else 0.0
+def _clamp(x: float) -> float:
+    return max(0.0, min(1.0, x))
+
+
+# where the bundled Odisha climate actually sits (data/climate_fallback.json):
+# specific yield ~1330-1500 kWh/kWp/yr, rain ~1335-1850 mm/yr
+SUN_LO, SUN_HI = 1300.0, 1520.0
+RAIN_LO, RAIN_HI = 1300.0, 1850.0
+
+
+def green_score(solar: Dict, rain: Dict) -> Dict:
+    """0-100 Green Score - honest, and it moves with the place and the roof.
+
+    The design tools always *size* solar to cover the bill and always *plan*
+    rainwater to meet the Odisha norm, so "coverage" and "meets rule" alone can't
+    tell a great roof from a mediocre one - that's why every report used to print
+    100/A+. The score also credits what genuinely varies:
+
+      Solar /55 = 35 bill covered + 10 sunshine quality + 10 payback speed
+      Water /35 = 20 water covered + 8 rainfall + 7 months the rain alone meets demand
+      Rule  /10 = Odisha 6 m³ per 100 m² norm met
+    """
+    has_solar = (solar.get("panels") or 0) > 0
+    s_cov = 35.0 * _clamp(float(solar.get("coverage") or 0.0))
+    s_sun = 10.0 * _clamp((float(solar.get("specific_yield") or 0.0) - SUN_LO) / (SUN_HI - SUN_LO))
+    payback = solar.get("payback_years")
+    s_val = 10.0 * _clamp((6.0 - float(payback)) / 4.0) if payback else 0.0
+    if not has_solar:                       # roof too small for panels: no solar credit
+        s_cov = s_sun = s_val = 0.0
+    s = s_cov + s_sun + s_val
+
+    w_cov = 20.0 * _clamp(float(rain.get("coverage") or 0.0))
+    w_rain = 8.0 * _clamp((float(rain.get("annual_rain_mm") or 0.0) - RAIN_LO) / (RAIN_HI - RAIN_LO))
+    harv = rain.get("monthly_harvest_l") or []
+    dem = rain.get("monthly_demand_l") or []
+    months = sum(1 for h, d in zip(harv, dem) if d > 0 and h >= d)   # self-sufficient months
+    w_mon = 7.0 * _clamp((months - 3.0) / 4.0)
+    w = w_cov + w_rain + w_mon
+
+    r = 10.0 if rain.get("meets_rule") else 0.0
+
     score = round(s + w + r)
-    grade = ("A+" if score >= 90 else "A" if score >= 75 else "B" if score >= 60
-             else "C" if score >= 40 else "D")
+    grade = ("A+" if score >= 90 else "A" if score >= 80 else "B" if score >= 68
+             else "C" if score >= 50 else "D")
     return {"score": score, "grade": grade, "solar_pts": round(s), "water_pts": round(w),
             "rule_pts": round(r)}

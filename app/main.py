@@ -38,12 +38,12 @@ from .geo import (decode_polyline, encode_polyline, latlon_to_px, polygon_area_m
                   polygon_centroid, polygon_perimeter_m, px_to_latlon)
 from .layout import auto_layout
 from .rain import RULE_NAME, RULE_SHORT, assess_rain, green_score
-from . import pincode
+from . import pincode, places
 from .report import build_report_pdf, qr_svg, roof_thumbnail
-from .segment import RoofSegmenter, mask_to_polygon
+from .segment import RoofSegmenter, classify_surface, mask_to_polygon
 from .solar import assess_solar, odisha_state_subsidy, pm_surya_ghar_subsidy
 from .tariff import TARIFF_LABEL, monthly_bill, slab_table
-from .tiles import TileFetcher
+from .tiles import TileFetcher, decode_crop_b64
 
 state: dict = {}
 
@@ -79,6 +79,11 @@ class SegmentIn(BaseModel):
     points: List[SegPoint] = Field(min_length=1, max_length=20)
     zoom: int = Field(19, ge=12, le=23)
     engine: Literal["auto", "opencv"] = "auto"
+    # Optional browser-captured crop: the frontend draws the map tiles it already
+    # has and sends the image, so the roof AI works even when this server is offline.
+    image: Optional[str] = Field(None, max_length=2_500_000)   # base64 PNG/JPEG (or data URL)
+    origin: Optional[Tuple[int, int]] = None                  # global px (gx0, gy0) of the crop's top-left at zoom `z`
+    z: Optional[int] = Field(None, ge=12, le=23)              # zoom level of the supplied crop
 
 
 class AssessIn(BaseModel):
@@ -136,8 +141,7 @@ async def run_assessment(req: AssessIn) -> dict:
     layout = await run_in_threadpool(auto_layout, poly, None, params)
     solar = assess_solar(area, climate, params, layout_max_panels=layout["max_panels"])
     rain = assess_rain(area, climate, params)
-    score = green_score(solar["coverage"], rain["coverage"], solar["panels"] > 0,
-                        rain["meets_rule"])
+    score = green_score(solar, rain)
     panels = layout["panels"][: solar["panels"]][:400]
     rid = hashlib.sha1(json.dumps([encode_polyline(poly), params], sort_keys=True,
                                   default=str).encode()).hexdigest()[:8].upper()
@@ -329,12 +333,50 @@ def _geo_row(name: str, lat: float, lon: float, typ: str = "") -> dict:
             **{k: v for k, v in odisha.locate(lat, lon).items() if k in ("district", "discom")}}
 
 
+def _merge_rows(primary: list, extra: list, limit: int = 8) -> list:
+    """Online rows first, then offline ones that are not the same place (~1 km / same head)."""
+    out = list(primary)
+
+    def dup(r: dict) -> bool:
+        for e in out:
+            if abs(e["lat"] - r["lat"]) < 0.01 and abs(e["lon"] - r["lon"]) < 0.01:
+                return True
+            if e["name"].split(",")[0].strip().lower() == r["name"].split(",")[0].strip().lower():
+                return True
+        return False
+
+    for r in extra:
+        if not dup(r):
+            out.append(r)
+        if len(out) >= limit:
+            break
+    return out
+
+
+@app.get("/api/suggest")
+async def suggest(q: str = Query(..., min_length=2, max_length=200)):
+    """Instant type-ahead suggestions from the bundled Odisha data (PINs, towns,
+    districts, localities) - offline, never raises, capped small."""
+    q = q.strip()
+    out: list = []
+    pin = pincode.find_pin(q)
+    if pin:
+        hit = pincode.lookup(pin)
+        if hit:
+            out.append(_geo_row(hit["name"], hit["lat"], hit["lon"],
+                                "postcode" if hit["exact"] else "postcode_area"))
+    for name, lat, lon, typ in places.search(q, limit=8):
+        out.append(_geo_row(f"{name}, Odisha", lat, lon, typ))
+    return _merge_rows([], out, limit=8)
+
+
 @app.get("/api/geocode")
 async def geocode(q: str = Query(..., min_length=2, max_length=200)):
     # SuryaJal serves Odisha: bias (and limit) place search to the State.
+    # The built-in PIN table + Odisha gazetteer always answer - Nominatim only adds detail.
     q = q.strip()
     pin = pincode.find_pin(q)
-    only_pin = pin is not None and re.fullmatch(r"[\d\s]+", q) is not None
+    only_pin = pin is not None and re.fullmatch(r"[\d\s\-]+", q) is not None
     data: list = []
     online = True
     try:
@@ -364,15 +406,21 @@ async def geocode(q: str = Query(..., min_length=2, max_length=200)):
             continue
         if not (-85 <= lat <= 85 and -180 <= lon <= 180):
             continue
-        if ", India" in name and not any(t in name for t in (", Odisha", "Odisha,")):
-            continue                       # outside the State: skip it
+        if not places.in_india(lat, lon):
+            continue                       # the map is India-only: never show rows it can't reach
         out.append(_geo_row(name, lat, lon, str(d.get("type", ""))))
-    if pin and not out:                    # offline / not in OSM: built-in Odisha PIN table
-        hit = pincode.lookup(pin)
+    # ---- offline answers (always available): the bundled Odisha PIN table + gazetteer
+    offline: list = []
+    if pin:
+        hit = pincode.lookup(pin)          # every Odisha PIN resolves at least to its district
         if hit:
-            out = [_geo_row(hit["name"], hit["lat"], hit["lon"],
-                             "postcode" if hit["exact"] else "postcode_area")]
-    if not out and data:                   # nothing in Odisha matched - show what we found
+            offline.append(_geo_row(hit["name"], hit["lat"], hit["lon"],
+                                    "postcode" if hit["exact"] else "postcode_area"))
+    for name, lat, lon, typ in places.search(q):
+        offline.append(_geo_row(f"{name}, Odisha", lat, lon, typ))
+    out = _merge_rows(out, offline)
+    out.sort(key=lambda r: 0 if odisha.in_odisha(r["lat"], r["lon"]) else 1)   # Odisha first
+    if not out and data:                   # nothing above matched - show Indian results we found
         for d in data:
             if not isinstance(d, dict):
                 continue
@@ -383,14 +431,19 @@ async def geocode(q: str = Query(..., min_length=2, max_length=200)):
             name = d.get("display_name", "")
             if (not isinstance(name, str) or not name
                     or not (math.isfinite(lat) and math.isfinite(lon))
-                    or not (-85 <= lat <= 85 and -180 <= lon <= 180)):
+                    or not places.in_india(lat, lon)):
                 continue
             out.append({"name": name, "lat": lat, "lon": lon, "type": str(d.get("type", "")),
                         "district": None, "discom": None})
             if len(out) == 3:
                 break
-    if not out and not online:
-        raise HTTPException(503, "Place search needs internet - you can still pan the map or enter an Odisha PIN code.")
+    if not out:
+        if pin:
+            raise HTTPException(404, f"PIN {pin} is not an Odisha PIN code - SuryaJal covers "
+                                     "Odisha PINs 751xxx-770xxx. Try an Odisha town or area name.")
+        if not online:
+            raise HTTPException(503, "Place search needs internet for that query - try an Odisha "
+                                     "town, area or PIN code (for example Puri, Sahid Nagar, 751007).")
     return out
 
 
@@ -418,16 +471,27 @@ async def reverse(lat: float = Query(..., ge=-85, le=85), lon: float = Query(...
 async def segment(req: SegmentIn):
     seg: RoofSegmenter = state["seg"]
     anchor = req.points[0]
-    crop = await state["tiles"].crop_around(anchor.lat, anchor.lon, req.zoom, SEG_CROP_PX)
-    if crop is None or crop["bad"] > 0.5:
-        raise HTTPException(503, "Satellite imagery is not available here (or you are offline). "
-                                 "Use ‘Draw manually’ instead.")
+    if req.image is not None:
+        # crop drawn by the browser from the tiles it already shows on the map
+        if req.origin is None or req.z is None:
+            raise HTTPException(422, "Send image, origin and z together.")
+        try:
+            arr = decode_crop_b64(req.image)
+        except ValueError:
+            raise HTTPException(422, "Could not read the map image sent by the browser.")
+        crop = {"img": arr, "z": req.z, "gx0": int(req.origin[0]), "gy0": int(req.origin[1]), "bad": 0.0}
+    else:
+        crop = await state["tiles"].crop_around(anchor.lat, anchor.lon, req.zoom, SEG_CROP_PX)
+        if crop is None or crop["bad"] > 0.5:
+            raise HTTPException(503, "Satellite imagery is not available here (or you are offline). "
+                                     "Use ‘Draw manually’ instead.")
     z, gx0, gy0 = crop["z"], crop["gx0"], crop["gy0"]
+    h, w = crop["img"].shape[:2]
     pts, labels = [], []
     for p_ in req.points:
         x, y = latlon_to_px(p_.lat, p_.lon, z)
         x, y = x - gx0, y - gy0
-        if 0 <= x < SEG_CROP_PX and 0 <= y < SEG_CROP_PX:
+        if 0 <= x < w and 0 <= y < h:
             pts.append((x, y))
             labels.append(p_.label)
     if not pts or labels[0] != 1:
@@ -437,6 +501,11 @@ async def segment(req: SegmentIn):
     poly_px, touches = mask_to_polygon(res["mask"])
     if poly_px is None:
         return {"ok": False, "message": "No roof found at that spot - tap the middle of the roof, "
+                                        "or use ‘Draw manually’."}
+    surface = classify_surface(crop["img"], res["mask"])
+    if surface != "built":
+        what = "a water body" if surface == "water" else "greenery / a field"
+        return {"ok": False, "message": f"That looks like {what}, not a roof — tap a building rooftop, "
                                         "or use ‘Draw manually’."}
     ll = [px_to_latlon(gx0 + x, gy0 + y, z) for x, y in poly_px]
     area = polygon_area_m2(ll)
@@ -498,16 +567,24 @@ def _assess_from_query(q) -> Tuple[AssessIn, dict]:
     return req, meta
 
 
-@app.get("/r")
-@app.get("/api/report")
-async def report(request: Request):
-    q = dict(request.query_params)
+class ReportIn(BaseModel):
+    """Same report as GET /r, but the browser can attach the satellite crop it already
+    has (image + origin + z, like /api/segment) - so the PDF keeps its imagery even
+    when this server has no internet of its own."""
+    query: str = Field(max_length=12000)                      # the usual report query string
+    image: Optional[str] = Field(None, max_length=2_500_000)  # base64 PNG/JPEG (or data URL)
+    origin: Optional[Tuple[int, int]] = None
+    z: Optional[int] = Field(None, ge=12, le=23)
+
+
+async def _report_response(q: dict, request: Request, crop) -> Response:
     req, meta = _assess_from_query(q)
     a = await run_assessment(req)
-    try:
-        crop = await state["tiles"].crop_bbox(a["polygon"])
-    except Exception:
-        crop = None
+    if crop is None:
+        try:
+            crop = await state["tiles"].crop_bbox(a["polygon"])
+        except Exception:
+            crop = None
     thumb = await run_in_threadpool(roof_thumbnail, crop, a["polygon"], a["layout"]["panels"], 900)
     share_q = {k: v for k, v in q.items() if k not in ("dl",)}
     share_url = f"{_public_base(request)}/app?{httpx.QueryParams(share_q)}"
@@ -524,6 +601,28 @@ async def report(request: Request):
     return Response(pdf, media_type="application/pdf", headers={
         "Content-Disposition": f'{disp}; filename="SuryaJal_Green_Roof_Report_{a["report_id"]}.pdf"',
         "Cache-Control": "no-store"})
+
+
+@app.get("/r")
+@app.get("/api/report")
+async def report(request: Request):
+    return await _report_response(dict(request.query_params), request, None)
+
+
+@app.post("/r")
+@app.post("/api/report")
+async def report_post(req: ReportIn, request: Request):
+    q = dict(parse_qsl(req.query))
+    crop = None
+    if req.image is not None:
+        if req.origin is None or req.z is None:
+            raise HTTPException(422, "Send image, origin and z together.")
+        try:
+            arr = decode_crop_b64(req.image)
+        except ValueError:
+            raise HTTPException(422, "Could not read the map image sent by the browser.")
+        crop = {"img": arr, "z": req.z, "gx0": int(req.origin[0]), "gy0": int(req.origin[1]), "bad": 0.0}
+    return await _report_response(q, request, crop)
 
 
 @app.get("/api/qr.svg")
@@ -595,6 +694,13 @@ def roofs_delete(roof_id: int, user: dict = Depends(auth.current_user)):
 # ------------------------------------------------------------------ pages (React site + classic tool)
 CLASSIC_HTML = STATIC_DIR / "index.html"
 SPA_ROUTES = {"", "app", "login", "signup", "account", "demo"}
+# The shell HTML must never be cached: a stale copy pins old hashed assets and
+# the user keeps seeing an outdated app forever.
+NO_CACHE = {
+    "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+    "Pragma": "no-cache",
+    "Expires": "0",
+}
 
 
 @app.get("/classic", include_in_schema=False)
@@ -619,6 +725,6 @@ async def site(path: str, request: Request):
             return FileResponse(f, headers={"Cache-Control": cache})
     index = root / "index.html"
     if not index.exists():                                      # site not built -> classic tool
-        return FileResponse(CLASSIC_HTML, headers={"Cache-Control": "no-cache"})
+        return FileResponse(CLASSIC_HTML, headers=NO_CACHE)
     return FileResponse(index, status_code=200 if clean in SPA_ROUTES else 404,
-                        headers={"Cache-Control": "no-cache"})
+                        headers=NO_CACHE)

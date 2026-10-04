@@ -230,6 +230,29 @@ def clean_mask(mask: np.ndarray, seed: Tuple[int, int], positives: List) -> np.n
     return fill_holes(comp)
 
 
+def classify_surface(img: np.ndarray, mask: np.ndarray) -> str:
+    """What is the outline actually sitting on? The segmenter happily outlines
+    fish ponds and fields just as eagerly as roofs, so we sample the masked
+    pixels and call out unmistakable 'water' or 'vegetation'. Everything else
+    counts as 'built' - we only reject the obvious, never a real roof."""
+    sel = mask.astype(bool)
+    if sel.sum() < 24:
+        return "built"
+    if img.ndim == 2:                                   # grayscale crop
+        px = np.stack([img[sel].astype(np.float32)] * 3, axis=1)
+    else:
+        px = img[sel].astype(np.float32)[:, :3]
+    b, g, r = (float(px[:, i].mean()) for i in range(3))
+    brightness = (b + g + r) / 3.0
+    green = g - (r + b) / 2.0
+    blue = b - (r + g) / 2.0
+    if green > 14:                              # fields, algae ponds, tree cover
+        return "vegetation"
+    if blue > 10 and brightness < 110:          # open water
+        return "water"
+    return "built"
+
+
 def mask_to_polygon(mask: np.ndarray, eps_px: float | None = None):
     """Largest external contour, simplified. Returns (Nx2 float array in continuous
     pixel coords, touches_border). The simplified polygon is rescaled about its centroid

@@ -1,51 +1,28 @@
-import { useCallback, useEffect, useRef, useState, type ComponentType } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { motion, useReducedMotion, useSpring, useTransform } from "motion/react"
-import {
-  BrainCircuit, CheckCircle2, CircleAlert, CloudSun, Droplets, IndianRupee, Loader2, RotateCcw,
-  Satellite, Server, XCircle,
-} from "lucide-react"
 import { AnimatedLogoMark } from "@/components/brand/logo"
 import type { Health } from "@/lib/api"
-import { fmtIN } from "@/lib/format"
-import { cn } from "@/lib/utils"
 
 /**
- * "Pre-flight check" loader: the animated logo plays while the app really checks
- * the server, warms the roof AI, the climate cache, satellite imagery and the
- * subsidy / water rules - and prints each spec as it comes online.
+ * Clean boot intro: just the animated SuryaJal logo with a progress ring.
+ * The real pre-flight work (server, roof AI, climate, imagery, rules) still runs
+ * behind the scenes to warm things up - it just isn't shown as a spec table.
  */
 
-type Status = "wait" | "run" | "ok" | "warn" | "fail"
-type CheckId = "server" | "ai" | "climate" | "imagery" | "solar" | "water"
-interface Check {
-  id: CheckId
-  label: string
-  icon: ComponentType<{ className?: string }>
-  status: Status
-  detail: string
-}
-
-const INITIAL: Check[] = [
-  { id: "server", label: "SuryaJal server", icon: Server, status: "wait", detail: "FastAPI" },
-  { id: "ai", label: "Roof AI", icon: BrainCircuit, status: "wait", detail: "Segment Anything" },
-  { id: "climate", label: "Climate data", icon: CloudSun, status: "wait", detail: "NASA POWER" },
-  { id: "imagery", label: "Satellite imagery", icon: Satellite, status: "wait", detail: "Esri World Imagery" },
-  { id: "solar", label: "Solar rules", icon: IndianRupee, status: "wait", detail: "PM Surya Ghar + Odisha SFA" },
-  { id: "water", label: "Rainwater rules", icon: Droplets, status: "wait", detail: "ODA Rules 2020 · CHHATA" },
-]
-
-// Esri tile over Odisha (z5) - proves the browser can reach the imagery.
 const TILE = "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/5/14/23"
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
+const TOTAL = 6
 
-async function fetchHealth(timeout = 6000): Promise<{ h: Health; ms: number }> {
+async function fetchHealth(timeout = 6000): Promise<{ h: Health; ms: number } | null> {
   const ctl = new AbortController()
   const t = setTimeout(() => ctl.abort(), timeout)
   const t0 = performance.now()
   try {
     const r = await fetch("/api/health", { signal: ctl.signal, cache: "no-store" })
-    if (!r.ok) throw new Error(String(r.status))
+    if (!r.ok) return null
     return { h: (await r.json()) as Health, ms: Math.round(performance.now() - t0) }
+  } catch {
+    return null
   } finally {
     clearTimeout(t)
   }
@@ -61,11 +38,12 @@ function probeImage(url: string, timeout = 6000) {
   })
 }
 
+const RING_R = 88
+const RING_C = 2 * Math.PI * RING_R
+
 export function PreflightLoader({ onDone }: { onDone: () => void }) {
   const reduce = useReducedMotion()
-  const [checks, setChecks] = useState<Check[]>(INITIAL)
-  const [phase, setPhase] = useState<"running" | "done" | "failed">("running")
-  const [run, setRun] = useState(0)
+  const [progress, setProgress] = useState(0)      // 0..100 from the silent checks
   const finished = useRef(false)
 
   const finish = useCallback(() => {
@@ -74,128 +52,69 @@ export function PreflightLoader({ onDone }: { onDone: () => void }) {
     onDone()
   }, [onDone])
 
-  const set = useCallback((id: CheckId, patch: Partial<Check>) => {
-    setChecks((cs) => cs.map((c) => (c.id === id ? { ...c, ...patch } : c)))
-  }, [])
-
-  // --------------------------------------------------------------- the real checks
+  // --------------------------------------------------------------- silent warm-up
   useEffect(() => {
     let alive = true
     const t0 = performance.now()
     const minTotal = reduce ? 700 : 2600
-    const stagger = reduce ? 60 : 280
-    setChecks(INITIAL)
-    setPhase("running")
+    const tick = (delta: number) => setProgress((p) => Math.min(97, p + delta))
 
-    // each row starts in turn and resolves no sooner than `minRow` after it starts
-    const step = async (i: number, id: CheckId, work: () => Promise<Partial<Check>>) => {
-      await sleep(i * stagger)
+    // each probe starts in turn, nudges the ring, and completes it when done
+    const step = async (i: number, work: () => Promise<unknown>) => {
+      await sleep(i * (reduce ? 60 : 280))
       if (!alive) return
       const started = performance.now()
-      set(id, { status: "run" })
-      let patch: Partial<Check>
+      tick(100 / TOTAL / 3)
       try {
-        patch = await work()
-      } catch {
-        patch = { status: "fail", detail: "check failed" }
-      }
+        await work()
+      } catch { /* warm-up only - never block the app */ }
       const wait = (reduce ? 80 : 420) - (performance.now() - started)
       if (wait > 0) await sleep(wait)
-      if (alive) set(id, patch)
-      return patch.status
+      if (alive) tick((100 / TOTAL) * 2 / 3)
     }
 
-    const healthP = fetchHealth().catch(() => null)
+    const healthP = fetchHealth()
 
-    const tasks = [
-      step(0, "server", async () => {
+    void Promise.all([
+      step(0, async () => { await healthP }),
+      step(1, async () => {
         const r = await healthP
-        if (!r) return { status: "fail", detail: "not reachable — start it with run.bat / run.sh" }
-        return { status: "ok", detail: `FastAPI · v${r.h.version} · ${r.ms} ms` }
-      }),
-      step(1, "ai", async () => {
-        const r = await healthP
-        if (!r) return { status: "fail", detail: "waiting for server" }
-        const { h } = r
-        if (h.engine !== "mobilesam") return { status: "warn", detail: "basic OpenCV mode (models missing)" }
-        const spec = `MobileSAM · ONNX · ${h.specs.model.size_mb} MB`
-        if (h.ready) return { status: "ok", detail: `${spec} · warm` }
-        set("ai", { detail: `${spec} · warming up…` })
-        for (let k = 0; k < 20 && alive; k++) {
+        if (!r || r.h.engine !== "mobilesam" || r.h.ready) return
+        for (let k = 0; k < 20 && alive; k++) {          // warm the roof AI
           await sleep(800)
-          const again = await fetchHealth(3000).catch(() => null)
-          if (again?.h.ready) return { status: "ok", detail: `${spec} · warm` }
+          const again = await fetchHealth(3000)
+          if (again?.h.ready) return
         }
-        return { status: "warn", detail: `${spec} · first tap may take a few seconds` }
       }),
-      step(2, "climate", async () => {
-        const r = await healthP
-        if (!r) return { status: "fail", detail: "waiting for server" }
-        const c = r.h.specs.climate
-        return { status: "ok", detail: `${c.source} ${c.period.replace("-", "–")} · ${c.offline_cities} Odisha towns offline` }
-      }),
-      step(3, "imagery", async () => {
-        const [ok, r] = await Promise.all([probeImage(TILE), healthP])
-        const mpp = r?.h.specs.imagery.m_per_px ?? 0.29
-        return ok
-          ? { status: "ok", detail: `Esri World Imagery · ~${mpp} m per pixel` }
-          : { status: "warn", detail: "offline — you can still draw roofs by hand" }
-      }),
-      step(4, "solar", async () => {
-        const r = await healthP
-        if (!r) return { status: "fail", detail: "waiting for server" }
-        const s = r.h.specs.solar
-        const slabs = s.tariff_slabs ?? []
-        const lo = slabs.length ? slabs[0].rate : 2.9
-        const hi = slabs.length ? slabs[slabs.length - 1].rate : 6.1
-        return { status: "ok", detail: `${s.scheme} ≤ ₹${fmtIN(s.max_subsidy)} · OERC ₹${lo.toFixed(2)}–${hi.toFixed(2)}/unit` }
-      }),
-      step(5, "water", async () => {
-        const r = await healthP
-        if (!r) return { status: "fail", detail: "waiting for server" }
-        const w = r.h.specs.water
-        return { status: "ok", detail: `${w.l_per_m2} L per m² of roof (ODA Rules 2020) · CHHATA ≤ ₹${fmtIN(w.chhata?.max_subsidy ?? 55000)}` }
-      }),
-    ]
-
-    void Promise.all(tasks).then(async (statuses) => {
+      step(2, async () => { await healthP }),
+      step(3, async () => { await probeImage(TILE) }),
+      step(4, async () => { await healthP }),
+      step(5, async () => { await healthP }),
+    ]).then(async () => {
       if (!alive) return
       const left = minTotal - (performance.now() - t0)
       if (left > 0) await sleep(left)
-      if (!alive) return
-      if (statuses[0] === "fail") {
-        setPhase("failed")
-        return
-      }
-      setPhase("done")
-      await sleep(reduce ? 150 : 650)
       if (alive) finish()
     })
     return () => {
       alive = false
     }
-  }, [run, reduce, set, finish])
+  }, [reduce, finish])
 
-  // Esc / Enter skips
+  // Esc skips
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape" || (e.key === "Enter" && phase !== "running")) finish()
+      if (e.key === "Escape") finish()
     }
     window.addEventListener("keydown", onKey)
     return () => window.removeEventListener("keydown", onKey)
-  }, [finish, phase])
+  }, [finish])
 
-  // progress: resolved rows (running rows count half) -> spring -> number
-  const done = checks.filter((c) => c.status === "ok" || c.status === "warn" || c.status === "fail").length
-  const running = checks.filter((c) => c.status === "run").length
-  const target = phase === "done" ? 100 : Math.min(97, ((done + running * 0.45) / checks.length) * 100)
+  // progress number -> spring -> ring + gentle glow
   const spring = useSpring(0, { stiffness: 60, damping: 18 })
-  useEffect(() => { spring.set(target) }, [target, spring])
-  const width = useTransform(spring, (v) => `${v}%`)
-  const [pct, setPct] = useState(0)
-  useEffect(() => spring.on("change", (v) => setPct(Math.round(v))), [spring])
-
-  const warnings = checks.filter((c) => c.status === "warn").length
+  useEffect(() => { spring.set(progress) }, [progress, spring])
+  const dash = useTransform(spring, (v) => RING_C * (1 - Math.min(100, v) / 100))
+  const glow = useTransform(spring, (v) => 0.18 + 0.32 * (Math.min(100, v) / 100))
 
   return (
     <motion.div
@@ -206,7 +125,7 @@ export function PreflightLoader({ onDone }: { onDone: () => void }) {
       role="dialog"
       aria-label="SuryaJal is starting"
     >
-      {/* backdrop: map grid + sage glow + radar rings */}
+      {/* backdrop: map grid + sage glow */}
       <div
         aria-hidden
         className="absolute inset-0 opacity-[0.18]"
@@ -217,135 +136,57 @@ export function PreflightLoader({ onDone }: { onDone: () => void }) {
           maskImage: "radial-gradient(ellipse at center, black 20%, transparent 70%)",
         }}
       />
-      <div aria-hidden className="absolute top-1/2 left-1/2 size-[640px] -translate-x-1/2 -translate-y-[62%] rounded-full bg-[radial-gradient(circle,rgba(111,143,112,.35),transparent_62%)]" />
+      <motion.div
+        aria-hidden
+        className="absolute top-1/2 left-1/2 size-[640px] -translate-x-1/2 -translate-y-[62%] rounded-full bg-[radial-gradient(circle,rgba(111,143,112,.35),transparent_62%)]"
+        style={{ opacity: glow }}
+      />
       <button
         type="button"
         onClick={finish}
+        title="Press Esc to skip"
         className="absolute top-4 right-4 rounded-full border border-white/15 bg-white/5 px-3.5 py-1.5 text-xs font-semibold tracking-wide text-white/80 backdrop-blur transition hover:bg-white/10 hover:text-white"
       >
         Skip intro ›
       </button>
 
-      <div className="relative flex w-full max-w-md flex-col items-center">
-        <div className="relative">
-          {!reduce && [0, 1, 2].map((i) => (
-            <motion.span
-              key={i}
-              aria-hidden
-              className="pointer-events-none absolute top-1/2 left-1/2 size-32 -translate-x-1/2 -translate-y-1/2 rounded-full border border-sage-300/40"
-              initial={{ scale: 0.7, opacity: 0.7 }}
-              animate={{ scale: 2.8, opacity: 0 }}
-              transition={{ duration: 3, repeat: Infinity, delay: i, ease: "easeOut" }}
+      {/* the logo is the whole show: radar rings + a progress ring that fills as the app warms up */}
+      <div className="relative grid place-items-center">
+        {!reduce && [0, 1, 2].map((i) => (
+          <motion.span
+            key={i}
+            aria-hidden
+            className="pointer-events-none absolute size-32 rounded-full border border-sage-300/40"
+            initial={{ scale: 0.7, opacity: 0.7 }}
+            animate={{ scale: 2.8, opacity: 0 }}
+            transition={{ duration: 3, repeat: Infinity, delay: i, ease: "easeOut" }}
+          />
+        ))}
+        <div className="relative grid size-48 place-items-center sm:size-56">
+          <svg className="absolute inset-0 size-full -rotate-90" viewBox="0 0 200 200" aria-hidden>
+            <defs>
+              <linearGradient id="sj-ring" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0%" stopColor="#FBBF24" />
+                <stop offset="55%" stopColor="#BACFB6" />
+                <stop offset="100%" stopColor="#38BDF8" />
+              </linearGradient>
+            </defs>
+            <circle cx="100" cy="100" r={RING_R} fill="none" stroke="rgba(255,255,255,0.12)" strokeWidth="4" />
+            <motion.circle
+              cx="100" cy="100" r={RING_R} fill="none"
+              stroke="url(#sj-ring)" strokeWidth="4" strokeLinecap="round"
+              strokeDasharray={RING_C} style={{ strokeDashoffset: dash }}
             />
-          ))}
-          <AnimatedLogoMark className="relative size-28 drop-shadow-[0_10px_30px_rgba(245,158,11,.25)] sm:size-32" />
+          </svg>
+          <motion.div
+            animate={reduce ? undefined : { y: [0, -7, 0] }}
+            transition={{ duration: 3.6, repeat: Infinity, ease: "easeInOut" }}
+          >
+            <AnimatedLogoMark className="size-32 drop-shadow-[0_10px_30px_rgba(245,158,11,.25)] sm:size-36" />
+          </motion.div>
         </div>
-
-        <motion.h1
-          className="font-heading mt-4 flex text-4xl font-semibold tracking-[-0.03em] sm:text-5xl"
-          aria-label="SuryaJal"
-        >
-          {"SuryaJal".split("").map((ch, i) => (
-            <motion.span
-              key={i}
-              className={i >= 5 ? "text-sky-300" : "text-white"}
-              initial={{ opacity: 0, y: reduce ? 0 : 14 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: reduce ? 0 : 0.5 + i * 0.05, duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
-            >
-              {ch}
-            </motion.span>
-          ))}
-        </motion.h1>
-        <motion.p
-          className="mt-2 text-[11px] font-semibold tracking-[0.32em] text-sage-300 uppercase"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: reduce ? 0 : 0.95 }}
-        >
-          Sun + rain, measured from space
-        </motion.p>
-
-        {/* progress */}
-        <div className="mt-7 w-full" role="status" aria-live="polite">
-          <div className="mb-2 flex items-end justify-between font-mono text-[11px] text-white/60">
-            <span>
-              {phase === "failed" ? "Pre-flight check failed" : phase === "done"
-                ? warnings ? `Ready · ${warnings} warning${warnings > 1 ? "s" : ""}` : "All systems go"
-                : "Pre-flight check"}
-            </span>
-            <span className="tabular text-lg leading-none font-semibold text-white">{String(pct).padStart(3, "0")}%</span>
-          </div>
-          <div className="h-1.5 w-full overflow-hidden rounded-full bg-white/10">
-            <motion.div
-              className="h-full rounded-full bg-gradient-to-r from-amber-300 via-sage-300 to-sky-400"
-              style={{ width }}
-            />
-          </div>
-        </div>
-
-        {/* checklist */}
-        <ul className="mt-5 w-full space-y-1 rounded-2xl border border-white/10 bg-white/[0.04] p-2 backdrop-blur-sm">
-          {checks.map((c) => (
-            <CheckRow key={c.id} check={c} />
-          ))}
-        </ul>
-
-        {phase === "failed" && (
-          <div className="mt-5 flex gap-2">
-            <button
-              type="button"
-              onClick={() => { finished.current = false; setRun((r) => r + 1) }}
-              className="inline-flex items-center gap-1.5 rounded-full bg-white px-4 py-2 text-sm font-semibold text-sage-900 hover:bg-sage-100"
-            >
-              <RotateCcw className="size-4" /> Retry
-            </button>
-            <button
-              type="button"
-              onClick={finish}
-              className="rounded-full border border-white/20 px-4 py-2 text-sm font-semibold text-white/85 hover:bg-white/10"
-            >
-              Continue anyway
-            </button>
-          </div>
-        )}
       </div>
 
-      <p className="absolute bottom-4 text-[11px] tracking-wide text-white/35">
-        Renewable Energy Club · Tech Fest 2026 · Press Esc to skip
-      </p>
     </motion.div>
-  )
-}
-
-function CheckRow({ check }: { check: Check }) {
-  const { icon: Icon, status } = check
-  const tone = status === "ok" ? "text-emerald-300" : status === "warn" ? "text-amber-300"
-    : status === "fail" ? "text-red-300" : status === "run" ? "text-sky-200" : "text-white/30"
-  return (
-    <motion.li
-      layout
-      className={cn(
-        "flex items-center gap-3 rounded-xl px-2.5 py-2 transition-colors",
-        status === "run" && "bg-white/[0.06]",
-      )}
-    >
-      <span className={cn("grid size-8 shrink-0 place-items-center rounded-lg bg-white/[0.07]", status === "wait" && "opacity-50")}>
-        <Icon className={cn("size-4", status === "wait" ? "text-white/50" : "text-white/85")} />
-      </span>
-      <span className="min-w-0 flex-1">
-        <span className={cn("block text-[13px] font-semibold", status === "wait" ? "text-white/45" : "text-white/90")}>
-          {check.label}
-        </span>
-        <span className="block truncate font-mono text-[11px] text-white/50">{check.detail}</span>
-      </span>
-      <span className={cn("shrink-0", tone)} aria-label={status}>
-        {status === "run" ? <Loader2 className="size-4 animate-spin" />
-          : status === "ok" ? <CheckCircle2 className="size-4" />
-            : status === "warn" ? <CircleAlert className="size-4" />
-              : status === "fail" ? <XCircle className="size-4" />
-                : <span className="block size-1.5 rounded-full bg-white/25" />}
-      </span>
-    </motion.li>
   )
 }

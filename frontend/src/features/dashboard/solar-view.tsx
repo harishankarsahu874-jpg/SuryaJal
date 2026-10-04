@@ -6,6 +6,8 @@ import {
 import { Skeleton } from "@/components/ui/skeleton"
 import { Slider } from "@/components/ui/slider"
 import { fmtIN, MONTHS_LONG, rupees, sqft } from "@/lib/format"
+import type { LatLng } from "@/lib/geo"
+import { capturePolyCrop, darkCropFor, drawLayoutImage, type TileCrop } from "@/lib/mapcrop"
 import { useReportDownload } from "@/lib/report"
 import { cn } from "@/lib/utils"
 import { useDashboard } from "./state"
@@ -15,7 +17,6 @@ export function SolarView() {
   const { result: r, roof, address, inputs, setInput, setTab, query, loadDemo, assessing, config } = useDashboard()
   const [month, setMonth] = useState<number | null>(null)
   const [thumbQ, setThumbQ] = useState("")
-  const [thumbLoaded, setThumbLoaded] = useState(false)
   const [bill, setBill] = useState("")
   const { busy: dlBusy, download } = useReportDownload()
 
@@ -26,7 +27,6 @@ export function SolarView() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [r])
-  useEffect(() => setThumbLoaded(false), [thumbQ])
 
   const peak = useMemo(() => {
     if (!r) return 0
@@ -314,12 +314,7 @@ export function SolarView() {
         title={<span className="inline-flex items-center gap-2"><SolarPanel className="size-5 text-sage-600" /> AI Panel Layout Simulation</span>}
         right={<Pill tone="plain">Azimuth 180° · South</Pill>}>
         <div className="relative aspect-square overflow-hidden rounded-xl bg-sage-900">
-          {!thumbLoaded && <div className="absolute inset-0 animate-shimmer bg-[linear-gradient(90deg,#26342b,#34473a,#26342b)] bg-[length:200%_100%]" />}
-          {thumbQ && (
-            <img key={thumbQ} src={`/api/thumb?${thumbQ}&size=640`} alt="Satellite view of your roof with the suggested panel layout"
-              onLoad={() => setThumbLoaded(true)} onError={() => setThumbLoaded(true)}
-              className={cn("absolute inset-0 size-full object-cover transition-opacity duration-500", thumbLoaded ? "opacity-100" : "opacity-0")} />
-          )}
+          <LayoutThumb polygon={r.polygon} panels={r.layout.panels} serverQuery={thumbQ} />
           <span className="absolute bottom-3 left-3 inline-flex items-center gap-1.5 rounded-full bg-black/60 px-3 py-1.5 text-xs font-medium text-white backdrop-blur">
             <span className="size-2 rounded-full bg-amber-300" /> Tilt ≈ {tilt}° · optimised for {Math.abs(lat).toFixed(1)}°{lat >= 0 ? "N" : "S"}
           </span>
@@ -342,6 +337,58 @@ export function SolarView() {
         </button>
       </div>
     </div>
+  )
+}
+
+/** Satellite + panel-layout preview, drawn in the browser from the map's own tiles
+ *  (works even when the backend has no internet); /api/thumb is the fallback. */
+function LayoutThumb({ polygon, panels, serverQuery }: {
+  polygon: LatLng[]; panels: LatLng[][]; serverQuery: string
+}) {
+  const [src, setSrc] = useState<string | null>(null)
+  const [fallback, setFallback] = useState(false)
+  const [loaded, setLoaded] = useState(false)
+
+  useEffect(() => {
+    let alive = true
+    setSrc(null)
+    setFallback(false)
+    setLoaded(false)
+    void (async () => {
+      let cap: TileCrop | null = null
+      try { cap = await capturePolyCrop(polygon, 640) } catch { cap = null }
+      if (!alive) return
+      if (cap) {
+        try {
+          setSrc(drawLayoutImage(cap, polygon, panels, 640))
+          setLoaded(true)
+          return
+        } catch { /* fall through to the server image */ }
+      }
+      setFallback(true)
+    })()
+    return () => { alive = false }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [serverQuery])
+
+  return (
+    <>
+      {!loaded && <div className="absolute inset-0 animate-shimmer bg-[linear-gradient(90deg,#26342b,#34473a,#26342b)] bg-[length:200%_100%]" />}
+      {src && (
+        <img src={src} alt="Satellite view of your roof with the suggested panel layout"
+          className="absolute inset-0 size-full object-cover" />
+      )}
+      {fallback && !src && (
+        <img src={`/api/thumb?${serverQuery}&size=640`} alt="Satellite view of your roof with the suggested panel layout"
+          onLoad={() => setLoaded(true)}
+          onError={() => {
+            // last resort: still show the roof + panel outlines on a dark backdrop
+            try { setSrc(drawLayoutImage(darkCropFor(polygon), polygon, panels, 640)) } catch { /* give up quietly */ }
+            setLoaded(true)
+          }}
+          className={cn("absolute inset-0 size-full object-cover transition-opacity duration-500", loaded ? "opacity-100" : "opacity-0")} />
+      )}
+    </>
   )
 }
 

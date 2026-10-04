@@ -31,6 +31,22 @@ def test_assess(client):
     assert a["rain"]["annual_harvest_l"] > 0 and 0 <= a["score"]["score"] <= 100
 
 
+def test_green_score_changes_with_location(client):
+    """The same roof must NOT score the same everywhere (the old score was a
+    constant 100/A+ for every location and search)."""
+    clat = sum(p[0] for p in ROOF) / len(ROOF)
+    clon = sum(p[1] for p in ROOF) / len(ROOF)
+
+    def at(lat, lon):
+        return [[p[0] - clat + lat, p[1] - clon + lon] for p in ROOF]
+
+    coastal = client.post("/api/assess", json={"polygon": at(20.26, 86.61), "monthly_units": 300}).json()  # Paradeep ~1850 mm
+    inland = client.post("/api/assess", json={"polygon": at(20.05, 83.16), "monthly_units": 300}).json()   # Bhawanipatna ~1335 mm
+    assert coastal["score"]["score"] != inland["score"]["score"]
+    assert coastal["score"]["water_pts"] > inland["score"]["water_pts"]   # rainier place scores higher
+    assert inland["score"]["score"] < 100                                # 100 is not for everyone
+
+
 def test_assess_rejects_bad_input(client):
     assert client.post("/api/assess", json={"polygon": ROOF[:2]}).status_code == 422
     assert client.post("/api/assess", json={"polygon": ROOF, "family_size": 0}).status_code == 422
@@ -49,6 +65,15 @@ def test_qr_svg(client):
     assert r.status_code == 200 and "<svg" in r.text
 
 
+def test_suggest_offline_typeahead(client, monkeypatch):
+    """Instant suggestions from the bundled data - no internet, no errors."""
+    r = client.get("/api/suggest", params={"q": "Cuttack"}).json()
+    assert any("Cuttack" in x["name"] for x in r)
+    r = client.get("/api/suggest", params={"q": "751007"}).json()
+    assert "Sahid Nagar" in r[0]["name"]
+    assert client.get("/api/suggest", params={"q": "zzz"}).json() == []
+
+
 def test_geocode_pincode_offline(client, monkeypatch):
     import app.main as m
 
@@ -59,6 +84,42 @@ def test_geocode_pincode_offline(client, monkeypatch):
     assert r[0]["district"] and "Sahid Nagar" in r[0]["name"]
     r = client.get("/api/geocode", params={"q": "768 004"}).json()   # district-level fallback
     assert "Sambalpur" in r[0]["name"]
+    r = client.get("/api/geocode", params={"q": "751-007"}).json()   # hyphen separator
+    assert "Sahid Nagar" in r[0]["name"]
+
+
+def test_geocode_place_names_offline(client, monkeypatch):
+    """Town / area names resolve from the bundled Odisha gazetteer - no internet needed."""
+    import app.main as m
+
+    async def boom(*a, **k):
+        raise m.httpx.ConnectError("offline")
+    monkeypatch.setattr(m, "_nominatim", boom)
+    r = client.get("/api/geocode", params={"q": "Cuttack"}).json()
+    assert "Cuttack" in r[0]["name"] and r[0]["district"]
+    r = client.get("/api/geocode", params={"q": "Sahid Nagar"}).json()
+    assert "Sahid Nagar" in r[0]["name"]
+    r = client.get("/api/geocode", params={"q": "Patia Bhubaneswar"}).json()
+    assert "Patia" in r[0]["name"]
+    r = client.get("/api/geocode", params={"q": "Brahmapur"}).json()   # alias spelling
+    assert "Berhampur" in r[0]["name"]
+    # curated landmarks beat the generic town fallback (this used to fall back to Berhampur)
+    r = client.get("/api/geocode", params={"q": "nist university,berhampur"}).json()
+    assert "NIST" in r[0]["name"] and r[0]["type"] == "poi"
+
+
+def test_geocode_outside_odisha_without_internet(client, monkeypatch):
+    import app.main as m
+
+    async def boom(*a, **k):
+        raise m.httpx.ConnectError("offline")
+    monkeypatch.setattr(m, "_nominatim", boom)
+    r = client.get("/api/geocode", params={"q": "560001"})
+    assert r.status_code == 404                       # Bangalore PIN: say why, don't fake it
+    assert "Odisha" in r.json()["detail"]
+    r = client.get("/api/geocode", params={"q": "zzz-not-a-real-place"})
+    assert r.status_code == 503
+    assert "internet" in r.json()["detail"]
 
 
 def test_geocode_handles_bad_upstream_response(client, monkeypatch):
@@ -74,9 +135,10 @@ def test_geocode_handles_bad_upstream_response(client, monkeypatch):
     assert r.status_code == 200
     assert "Sahid Nagar" in r.json()[0]["name"]
 
+    # ...and free-text search keeps working through the bundled Odisha gazetteer.
     r = client.get("/api/geocode", params={"q": "Cuttack"})
-    assert r.status_code == 503
-    assert "needs internet" in r.json()["detail"]
+    assert r.status_code == 200
+    assert "Cuttack" in r.json()[0]["name"]
 
 
 def test_geocode_skips_malformed_upstream_entries(client, monkeypatch):
@@ -88,4 +150,136 @@ def test_geocode_skips_malformed_upstream_entries(client, monkeypatch):
     monkeypatch.setattr(m, "_nominatim", malformed)
     r = client.get("/api/geocode", params={"q": "Cuttack"})
     assert r.status_code == 200
-    assert r.json() == []
+    rows = r.json()
+    # malformed upstream rows are dropped; the offline gazetteer still answers
+    assert rows and all(isinstance(x["lat"], float) and isinstance(x["lon"], float) for x in rows)
+    assert any("Cuttack" in x["name"] for x in rows)
+
+
+def test_suggest_landmarks_nist_first(client):
+    """"NIST UNIVERSITY" must find NIST Berhampur (Palur Hills), not foreign universities."""
+    r = client.get("/api/suggest", params={"q": "NIST UNIVERSITY"}).json()
+    assert r and "NIST" in r[0]["name"] and r[0]["type"] == "poi"
+    assert abs(r[0]["lat"] - 19.1983) < 0.02 and abs(r[0]["lon"] - 84.7459) < 0.02
+    r = client.get("/api/suggest", params={"q": "nist"}).json()
+    assert "NIST" in r[0]["name"]
+    # the campus PIN code resolves to the same area (Palur Hills / Golanthara)
+    r = client.get("/api/suggest", params={"q": "761008"}).json()
+    assert any("Palur" in x["name"] for x in r)
+
+
+def test_geocode_drops_foreign_rows(client, monkeypatch):
+    """Upstream search engines sometimes answer with foreign cities - the map is India-only,
+    so those rows must be dropped and Odisha rows kept."""
+    import app.main as m
+
+    async def foreign(*a, **k):
+        return [
+            {"display_name": "Tiraspol, Moldova", "lat": 46.84, "lon": 29.60, "type": "city"},
+            {"display_name": "Boulder, Colorado, USA", "lat": 40.01, "lon": -105.27, "type": "city"},
+            {"display_name": "Berhampur, Odisha, India", "lat": 19.31, "lon": 84.80, "type": "city"},
+        ]
+
+    monkeypatch.setattr(m, "_nominatim", foreign)
+    rows = client.get("/api/geocode", params={"q": "somewhere"}).json()
+    assert rows
+    from app.places import in_india
+    assert all(in_india(x["lat"], x["lon"]) for x in rows), "foreign rows leaked through"
+    # Odisha answers come first
+    from app.odisha import in_odisha
+    assert in_odisha(rows[0]["lat"], rows[0]["lon"])
+
+
+def test_index_never_serves_stale_bundles(client):
+    """A held-open preview can run an old JS bundle forever - HTML must never be cached."""
+    r = client.get("/")
+    assert r.status_code == 200
+    assert "no-store" in r.headers.get("cache-control", "")
+
+
+def _synthetic_crop_b64():
+    """A satellite-looking 512x512 scene with a clear roof in the middle."""
+    import base64
+    import io
+
+    import cv2
+    import numpy as np
+    from PIL import Image
+
+    rng = np.random.default_rng(0)
+    img = (rng.normal(0, 9, (512, 512, 3)) + np.array([70, 95, 60])).clip(0, 255).astype(np.uint8)
+    cv2.rectangle(img, (180, 200), (320, 300), (200, 110, 80), -1)     # terracotta roof
+    buf = io.BytesIO()
+    Image.fromarray(img).save(buf, format="PNG")
+    return base64.b64encode(buf.getvalue()).decode()
+
+
+def test_segment_with_browser_image(client):
+    """The frontend can send the map crop itself - the AI works with zero server internet."""
+    from app.geo import latlon_to_px
+
+    b64 = _synthetic_crop_b64()
+    gx, gy = latlon_to_px(20.2961, 85.8245, 18)
+    gx0, gy0 = int(gx - 256), int(gy - 256)      # 512 px crop centered on the tap
+    r = client.post("/api/segment", json={
+        "points": [{"lat": 20.2961, "lon": 85.8245, "label": 1}],
+        "zoom": 18, "image": b64, "origin": [gx0, gy0], "z": 18,
+    })
+    assert r.status_code == 200
+    d = r.json()
+    assert d["ok"] is True and len(d["polygon"]) >= 3 and d["area_m2"] > 0
+
+
+def test_segment_rejects_ponds_and_fields(client):
+    """The AI must not pretend a fish pond or a green field is a roof (it used to
+    happily outline aquaculture ponds)."""
+    import base64
+    import io
+
+    import numpy as np
+    from PIL import Image
+    from app.geo import latlon_to_px
+
+    rng = np.random.default_rng(1)
+    # BGR image that is unmistakably greenery: G clearly dominant
+    green = (rng.normal(0, 7, (512, 512, 3)) + np.array([60.0, 130.0, 70.0])).clip(0, 255).astype(np.uint8)
+    buf = io.BytesIO()
+    Image.fromarray(green).save(buf, format="PNG")
+    gx, gy = latlon_to_px(20.2961, 85.8245, 18)
+    r = client.post("/api/segment", json={
+        "points": [{"lat": 20.2961, "lon": 85.8245, "label": 1}],
+        "zoom": 18, "image": base64.b64encode(buf.getvalue()).decode(),
+        "origin": [int(gx - 256), int(gy - 256)], "z": 18,
+    }).json()
+    assert r["ok"] is False and "not a roof" in r["message"]
+
+
+def test_segment_image_needs_full_geometry(client):
+    r = client.post("/api/segment", json={
+        "points": [{"lat": 20.2961, "lon": 85.8245, "label": 1}],
+        "zoom": 18, "image": _synthetic_crop_b64(),       # missing origin + z
+    })
+    assert r.status_code == 422
+    r = client.post("/api/segment", json={
+        "points": [{"lat": 20.2961, "lon": 85.8245, "label": 1}],
+        "zoom": 18, "image": "!!not-base64!!", "origin": [0, 0], "z": 18,
+    })
+    assert r.status_code == 422
+
+
+def test_report_post_with_browser_image(client):
+    """POST /r accepts the browser-captured crop - the PDF keeps its imagery offline."""
+    from urllib.parse import urlencode
+
+    from app.geo import encode_polyline
+
+    q = {"p": encode_polyline([tuple(p) for p in ROOF]), "u": "300", "f": "4",
+         "rt": "rcc", "uf": "70", "a": "Test roof", "m": "manual"}
+    r = client.post("/r", json={"query": urlencode({**q, "dl": "1"}),
+                                "image": _synthetic_crop_b64(), "origin": [0, 0], "z": 18})
+    assert r.status_code == 200 and r.headers["content-type"] == "application/pdf"
+    assert r.content[:5] == b"%PDF-" and len(r.content) > 20000
+    # garbage image is rejected, not silently ignored
+    r = client.post("/r", json={"query": urlencode(q), "image": "!!not-base64!!",
+                                "origin": [0, 0], "z": 18})
+    assert r.status_code == 422
