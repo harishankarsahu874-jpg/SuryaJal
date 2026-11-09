@@ -4,14 +4,15 @@ import "leaflet/dist/leaflet.css"
 import { AnimatePresence, motion } from "motion/react"
 import { toast } from "sonner"
 import {
-  ArrowRight, Check, Eraser, Loader2, MapPin, Minus, PenLine, Plus, RotateCcw, Search, Sparkles, Undo2, X,
+  ArrowRight, ChartColumn, Check, ChevronDown, Droplet, Eraser, Loader2, MapPin, Minus, PenLine, Plus, RotateCcw,
+  Search, Sparkles, Sun, Undo2, X,
 } from "lucide-react"
 import { api, type SegmentResponse } from "@/lib/api"
 import { searchPlaces, type GeoResult } from "@/lib/geosearch"
 import { captureCrop } from "@/lib/mapcrop"
 import { areaM2, INDIA_BOUNDS, ODISHA_CENTER, ODISHA_CITIES, ODISHA_ZOOM, type LatLng } from "@/lib/geo"
 import { EsriImagery } from "@/lib/imagery"
-import { fmtIN, litres, sqft } from "@/lib/format"
+import { fmtIN, litres, rupeesShort, sqft } from "@/lib/format"
 import { cn } from "@/lib/utils"
 import { useDashboard } from "./state"
 
@@ -39,6 +40,7 @@ export function MapPanel({ visible }: { visible: boolean }) {
 
   const elRef = useRef<HTMLDivElement>(null)
   const wrapRef = useRef<HTMLDivElement>(null)
+  const topRef = useRef<HTMLDivElement>(null)
   const stackRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<L.Map | null>(null)
   const layers = useRef<{
@@ -61,6 +63,9 @@ export function MapPanel({ visible }: { visible: boolean }) {
   const [, tick] = useReducer((x: number) => x + 1, 0)
   const [hint, setHintState] = useState<{ html: ReactNode; busy?: boolean }>({ html: <>Search your area, zoom in and <b>tap your roof</b></> })
   const [liveArea, setLiveArea] = useState<number | null>(null)
+  // the roof card shows just the area until "Show More" unfolds solar + rainwater; every newly picked
+  // roof starts folded again (fine-tuning the current one keeps it open)
+  const [more, setMore] = useState(false)
   const setHint = (html: ReactNode, busy = false) => setHintState({ html, busy })
 
   const idleHint = useCallback(() => {
@@ -147,6 +152,23 @@ export function MapPanel({ visible }: { visible: boolean }) {
     return () => ro.disconnect()
   }, [])
 
+  // the unfolded roof card leaves a phone little map: keep the picked roof in sight in the gap
+  // between the search box and the card (also when coming back from the results)
+  useEffect(() => {
+    if (!more || !visible) return
+    const t = setTimeout(() => {
+      const map = mapRef.current, ly = layers.current, top = topRef.current, stack = stackRef.current
+      if (!map || !ly || !top || !stack || !ctxRef.current.roof) return
+      const b = ly.roof.getBounds()
+      const y1 = map.latLngToContainerPoint(b.getNorthWest()).y
+      const y2 = map.latLngToContainerPoint(b.getSouthEast()).y
+      const gapTop = top.offsetTop + top.offsetHeight + 8, gapBottom = stack.offsetTop - 8
+      if (gapBottom - gapTop < 40 || (y1 >= gapTop && y2 <= gapBottom)) return
+      map.panBy([0, Math.round((y1 + y2) / 2 - (gapTop + gapBottom) / 2)])
+    }, 280)                                         // once the card has finished unfolding
+    return () => clearTimeout(t)
+  }, [more, visible])
+
   // ------------------------------------------------------------ roof -> map
   const roof = ctx.roof
   const lastFit = useRef(0)
@@ -231,6 +253,7 @@ export function MapPanel({ visible }: { visible: boolean }) {
       S.aiPoints.push(pt)
     } else {
       S.aiPoints = [pt]
+      setMore(false)                     // a new roof: area first, "Show More" for the rest
     }
     void runSegment()
   }
@@ -339,6 +362,7 @@ export function MapPanel({ visible }: { visible: boolean }) {
     if (m === "draw") {
       map.doubleClickZoom.disable()
       S.refine = null
+      setMore(false)                     // keep the map clear for clicking corners
       setHint(<>Click each <b>corner</b> of your roof — click the first corner to finish</>)
     } else {
       map.doubleClickZoom.enable()
@@ -359,6 +383,12 @@ export function MapPanel({ visible }: { visible: boolean }) {
     tick()
   }
 
+  // "Show More" / "Show Less" on the roof card
+  function toggleMore() {
+    if (!more && S.refine !== null) setRefine(null)   // the refine chips fold away while it is open
+    setMore(!more)
+  }
+
   function undo() {
     if (S.mode === "draw") {
       S.drawPts.pop()
@@ -373,6 +403,7 @@ export function MapPanel({ visible }: { visible: boolean }) {
     S.aiPoints = []
     S.drawPts = []
     S.refine = null
+    setMore(false)
     const ly = layers.current
     if (ly) {
       ;[ly.draw, ly.prompts].forEach((l) => l.clearLayers())
@@ -390,6 +421,7 @@ export function MapPanel({ visible }: { visible: boolean }) {
       if (e.key === "Escape") {
         if (S.mode === "draw" && S.drawPts.length) { S.drawPts = []; renderDraw() }
         else if (S.refine !== null) setRefine(null)
+        else if (!typing) setMore(false)
       }
       if (typing) return
       if (e.key === "Enter" && S.mode === "draw") finishDraw()
@@ -402,9 +434,11 @@ export function MapPanel({ visible }: { visible: boolean }) {
 
   const draw = S.mode === "draw"
   const canUndo = (draw && S.drawPts.length > 0) || (!draw && S.aiPoints.length > 1)
-  const showRefine = !!roof && roof.method !== "manual" && !draw
+  const showRefine = !!roof && roof.method !== "manual" && !draw && !more
   const area = liveArea ?? (roof ? areaM2(roof.latlngs) : 0)
   const r = ctx.result
+  const ready = !!r && !ctx.assessing
+  const waterPct = r ? Math.round(r.rain.coverage * 100) : 0
 
   return (
     <div ref={wrapRef} className="sj-map relative h-full w-full overflow-hidden bg-sage-950">
@@ -421,7 +455,7 @@ export function MapPanel({ visible }: { visible: boolean }) {
       </AnimatePresence>
 
       {/* search + hint */}
-      <div className="absolute inset-x-3 top-3 z-[500] flex flex-col items-start gap-2 sm:left-4 sm:right-auto sm:w-[min(400px,calc(100%-2rem))]">
+      <div ref={topRef} className="absolute inset-x-3 top-3 z-[500] flex flex-col items-start gap-2 sm:left-4 sm:right-auto sm:w-[min(400px,calc(100%-2rem))]">
         <SearchBox onPick={(g) => {
             const name = g.name.split(", ").slice(0, 2).join(", ")
             mapRef.current?.flyTo([g.lat, g.lon], zoomFor(g.type), { duration: 1.2 })
@@ -455,7 +489,7 @@ export function MapPanel({ visible }: { visible: boolean }) {
       </div>
 
       {/* bottom stack: refine chips, toolbar, roof summary */}
-      <div ref={stackRef} className="pointer-events-none absolute inset-x-0 bottom-3 z-[500] flex flex-col items-center gap-2 px-3 lg:bottom-6 [&>*]:pointer-events-auto">
+      <div ref={stackRef} className="pointer-events-none absolute inset-x-0 bottom-[calc(0.75rem+env(safe-area-inset-bottom))] z-[500] flex flex-col items-center gap-2 px-3 lg:bottom-6 [&>*]:pointer-events-auto">
         <AnimatePresence>
           {showRefine && (
             <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 8 }}
@@ -479,7 +513,7 @@ export function MapPanel({ visible }: { visible: boolean }) {
           <ToolBtn onClick={clearAll} label="Clear"><Eraser /></ToolBtn>
         </div>
 
-        {/* roof summary sheet (mobile) */}
+        {/* roof card: the selected area first - solar & rainwater stay folded away until "Show More" */}
         <AnimatePresence>
           {roof && (
             <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 20 }}
@@ -488,19 +522,41 @@ export function MapPanel({ visible }: { visible: boolean }) {
                 <div className="min-w-0 flex-1">
                   <div className="text-[11px] font-semibold tracking-wider text-muted-foreground uppercase">Your roof</div>
                   <div className="font-heading text-2xl leading-tight font-medium tabular">
-                    {fmtIN(area)} <span className="text-sm text-muted-foreground">m² · {fmtIN(sqft(area))} sq ft</span>
+                    {fmtIN(area)} <span className="text-sm text-muted-foreground">m² · <span className="whitespace-nowrap">{fmtIN(sqft(area))} sq ft</span></span>
                   </div>
-                  <div className="mt-0.5 truncate text-xs text-muted-foreground">
-                    {r && !ctx.assessing
-                      ? <>☀️ {r.solar.kw.toFixed(2)} kW solar · 💧 {litres(r.rain.annual_harvest_l)} rain / yr</>
-                      : <>Calculating solar &amp; rainwater…</>}
-                  </div>
+                  {ctx.address && (
+                    <div className="mt-0.5 flex min-w-0 items-center gap-1 text-xs text-muted-foreground">
+                      <MapPin className="size-3 shrink-0" /><span className="truncate">{ctx.address}</span>
+                    </div>
+                  )}
                 </div>
-                <button type="button" onClick={() => ctx.setTab("solar")}
-                  className="inline-flex h-11 shrink-0 items-center gap-1.5 rounded-xl bg-primary px-4 text-sm font-semibold text-primary-foreground shadow hover:bg-primary/90">
-                  Results <ArrowRight className="size-4" />
+                <button type="button" onClick={toggleMore} aria-expanded={more} aria-controls="sj-roof-more"
+                  className="inline-flex h-11 shrink-0 items-center justify-center gap-1.5 rounded-xl bg-primary px-3.5 text-sm font-semibold text-primary-foreground shadow transition hover:bg-primary/90 active:translate-y-px sm:min-w-32 sm:px-4">
+                  {more ? "Show Less" : "Show More"}
+                  <ChevronDown className={cn("size-4 transition-transform duration-200", more && "rotate-180")} />
                 </button>
               </div>
+
+              <AnimatePresence initial={false}>
+                {more && (
+                  <motion.div id="sj-roof-more" key="more" className="overflow-hidden"
+                    initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }}
+                    transition={{ duration: 0.22, ease: "easeOut" }}>
+                    <div className="mt-3 grid grid-cols-2 gap-2 border-t pt-3">
+                      <ResultTile tone="sun" icon={Sun} title="Solar" loading={!ready} onClick={() => ctx.setTab("solar")}
+                        value={r ? r.solar.kw.toFixed(2) : ""} unit="kW"
+                        sub={r && r.solar.panels > 0 ? `Saves ${rupeesShort(r.solar.annual_savings)} / yr` : "Roof too small for panels"} />
+                      <ResultTile tone="water" icon={Droplet} title="Rainwater" loading={!ready} onClick={() => ctx.setTab("rain")}
+                        value={r ? litres(r.rain.annual_harvest_l) : ""} unit="/ yr"
+                        sub={waterPct >= 100 ? "All your water needs" : `${waterPct}% of water needs`} />
+                    </div>
+                    <button type="button" onClick={() => ctx.setTab("report")}
+                      className="mt-2 inline-flex h-9 w-full items-center justify-center gap-1.5 rounded-xl text-[13px] font-semibold text-sage-800 transition hover:bg-secondary">
+                      <ChartColumn className="size-4" /> Green Score &amp; PDF report <ArrowRight className="size-3.5" />
+                    </button>
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </motion.div>
           )}
         </AnimatePresence>
@@ -522,6 +578,39 @@ function ToolBtn({ children, label, onClick, active, tone, className }: {
       )}>
       {children}
       <span className="max-[380px]:hidden">{label}</span>
+    </button>
+  )
+}
+
+/** one result on the unfolded roof card - tapping it opens that full page */
+function ResultTile({ tone, icon: Icon, title, value, unit, sub, loading, onClick }: {
+  tone: "sun" | "water"; icon: typeof Sun; title: string; value: string; unit: string; sub: string
+  loading: boolean; onClick: () => void
+}) {
+  const sun = tone === "sun"
+  return (
+    <button type="button" onClick={onClick}
+      className={cn(
+        "group flex min-h-[5.75rem] min-w-0 flex-col rounded-xl border p-3 text-left transition hover:shadow-md active:translate-y-px",
+        sun ? "border-sun/25 bg-sun-soft/50 hover:bg-sun-soft/80" : "border-water/25 bg-water-soft/50 hover:bg-water-soft/80",
+      )}>
+      <span className={cn("flex items-center gap-1.5 text-[13px] font-semibold", sun ? "text-sun-ink" : "text-water-ink")}>
+        <Icon className="size-4 shrink-0" />
+        <span className="truncate">{title}</span>
+        <ArrowRight className="ml-auto size-4 shrink-0 opacity-60 transition group-hover:translate-x-0.5 group-hover:opacity-100 max-[359px]:hidden" />
+      </span>
+      {loading ? (
+        <span className="mt-auto inline-flex items-center gap-1.5 pt-2 text-xs text-muted-foreground">
+          <Loader2 className="size-3.5 animate-spin" /> Calculating…
+        </span>
+      ) : (
+        <span className="mt-auto block min-w-0 pt-1.5">
+          <span className="font-heading block truncate text-base leading-tight font-medium text-foreground tabular sm:text-lg">
+            {value} <span className="font-sans text-xs font-semibold text-muted-foreground">{unit}</span>
+          </span>
+          <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">{sub}</span>
+        </span>
+      )}
     </button>
   )
 }

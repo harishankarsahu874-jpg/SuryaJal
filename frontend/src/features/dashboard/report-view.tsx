@@ -34,7 +34,8 @@ export function ReportView() {
   const origin = phoneBase || window.location.origin
   const reportAbs = `${origin}/r?${query}`
   const shareUrl = `${origin}/app?${query}`
-  const next = encodeURIComponent(`/app?${query}`)
+  // after signing in, come straight back to this page (where Save lives) rather than to the map
+  const next = encodeURIComponent(`/app?${query}&v=report`)
   const saved = savedFor === query
   const qrFailed = qrFailedFor === reportAbs
   const qrHost = (() => { try { return new URL(reportAbs).host } catch { return "" } })()

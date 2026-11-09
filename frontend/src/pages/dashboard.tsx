@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react"
 import { Link } from "react-router-dom"
 import { AnimatePresence, motion } from "motion/react"
-import { ChartColumn, Droplet, House, Sun } from "lucide-react"
+import { ArrowLeft, ChartColumn, Droplet, Sun } from "lucide-react"
 import { LogoMark } from "@/components/brand/logo"
 import { UserMenu } from "@/components/site/user-menu"
 import { MapPanel } from "@/features/dashboard/map-panel"
@@ -11,8 +11,8 @@ import { SolarView } from "@/features/dashboard/solar-view"
 import { DashboardProvider, useDashboard, type Tab } from "@/features/dashboard/state"
 import { cn } from "@/lib/utils"
 
-const TABS: { id: Tab; label: string; icon: typeof Sun }[] = [
-  { id: "map", label: "Roof Map", icon: House },
+/** result sections - their bar only appears once "Show More" on the map's roof card has opened them */
+const SECTIONS: { id: Exclude<Tab, "map">; label: string; icon: typeof Sun }[] = [
   { id: "solar", label: "Solar", icon: Sun },
   { id: "rain", label: "Rainwater", icon: Droplet },
   { id: "report", label: "Report", icon: ChartColumn },
@@ -31,9 +31,11 @@ export default function DashboardPage() {
 
 function Dashboard() {
   const { tab, setTab, assessing, roof } = useDashboard()
-  const panelTab: Tab = tab === "map" ? "solar" : tab
+  const onMap = tab === "map"
+  const panelTab: Tab = onMap ? "solar" : tab
   const scroller = useRef<HTMLDivElement>(null)
-  useEffect(() => { scroller.current?.scrollTo({ top: 0 }) }, [panelTab])
+  // every section opens at its top - including when you come back to it from the map
+  useEffect(() => { scroller.current?.scrollTo({ top: 0 }) }, [tab])
 
   return (
     <div className="flex h-dvh flex-col overflow-hidden bg-background">
@@ -60,34 +62,43 @@ function Dashboard() {
         </div>
       </header>
 
-      {/* desktop: one page at a time - 1) roof map, 2) solar, 3) rainwater, 4) report */}
-      <nav className="relative z-[1050] hidden shrink-0 gap-1 border-b bg-card/60 p-2 lg:flex" aria-label="Sections">
-        {TABS.map((t, i) => (
-          <button key={t.id} type="button" onClick={() => setTab(t.id)} aria-current={tab === t.id ? "page" : undefined}
-            className={cn(
-              "relative inline-flex h-10 flex-1 items-center justify-center gap-2 rounded-xl text-sm font-semibold transition",
-              tab === t.id ? "text-primary-foreground" : "text-muted-foreground hover:bg-secondary hover:text-foreground",
-            )}>
-            {tab === t.id && (
-              <motion.span layoutId="desk-tab" className="absolute inset-0 rounded-xl bg-primary shadow-sm"
-                transition={{ type: "spring", stiffness: 420, damping: 34 }} />
-            )}
-            <span className="relative text-xs opacity-70">{i + 1}</span>
-            <t.icon className="relative size-4" />
-            <span className="relative">{t.label}</span>
+      {/* nothing sits above the map: once a roof is picked, its card's "Show More" opens the results,
+          and only then does this bar appear - back to the map, solar, rainwater, report */}
+      {!onMap && (
+        <motion.nav initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2, ease: "easeOut" }}
+          className="relative z-[1050] flex shrink-0 items-center gap-1 border-b bg-card/60 p-2" aria-label="Result sections">
+          <button type="button" onClick={() => setTab("map")} aria-label="Back to map" title="Back to map"
+            className="inline-flex h-10 shrink-0 items-center gap-1.5 rounded-xl px-3 text-sm font-semibold text-muted-foreground transition hover:bg-secondary hover:text-foreground">
+            <ArrowLeft className="size-4" />
+            <span className="max-sm:hidden">Back to map</span>
           </button>
-        ))}
-      </nav>
+          <span className="mx-0.5 h-6 w-px shrink-0 bg-border" aria-hidden />
+          {SECTIONS.map((t) => (
+            <button key={t.id} type="button" onClick={() => setTab(t.id)} aria-current={tab === t.id ? "page" : undefined}
+              className={cn(
+                "relative inline-flex h-10 min-w-0 flex-1 items-center justify-center gap-1.5 rounded-xl text-[13px] font-semibold transition sm:gap-2 sm:text-sm",
+                tab === t.id ? "text-primary-foreground" : "text-muted-foreground hover:bg-secondary hover:text-foreground",
+              )}>
+              {tab === t.id && (
+                <motion.span layoutId="section-tab" className="absolute inset-0 rounded-xl bg-primary shadow-sm"
+                  transition={{ type: "spring", stiffness: 420, damping: 34 }} />
+              )}
+              <t.icon className="relative size-4 shrink-0 max-[359px]:hidden" />
+              <span className="relative truncate">{t.label}</span>
+            </button>
+          ))}
+        </motion.nav>
+      )}
 
       <div className="flex min-h-0 flex-1">
-        {/* page 1: the map, full screen */}
-        <section className={cn("relative min-h-0 flex-1", tab !== "map" && "hidden")}>
-          <MapPanel visible={tab === "map"} />
+        {/* the map, full screen - where every visit starts */}
+        <section className={cn("relative min-h-0 flex-1", !onMap && "hidden")}>
+          <MapPanel visible={onMap} />
         </section>
 
-        {/* pages 2-4: solar / rainwater / report, full width */}
-        <div ref={scroller} className={cn("min-h-0 flex-1 overflow-y-auto", tab === "map" && "hidden")}>
-          <div className="mx-auto w-full max-w-xl px-3.5 pt-3.5 pb-28 sm:px-5 lg:max-w-3xl lg:pb-10">
+        {/* after "Show More": solar / rainwater / report, full width */}
+        <div ref={scroller} className={cn("min-h-0 flex-1 overflow-y-auto", onMap && "hidden")}>
+          <div className="mx-auto w-full max-w-xl px-3.5 pt-3.5 pb-[calc(2.5rem+env(safe-area-inset-bottom))] sm:px-5 lg:max-w-3xl">
             <AnimatePresence mode="wait" initial={false}>
               <motion.div key={panelTab}
                 initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }}
@@ -99,25 +110,6 @@ function Dashboard() {
         </div>
       </div>
 
-      {/* bottom navigation (phones / tablets) */}
-      <nav className="safe-bottom relative z-[1100] shrink-0 border-t bg-card/95 backdrop-blur lg:hidden" aria-label="Sections">
-        <div className="mx-auto grid max-w-lg grid-cols-4">
-          {TABS.map((t) => {
-            const active = tab === t.id
-            return (
-              <button key={t.id} type="button" onClick={() => setTab(t.id)} aria-current={active ? "page" : undefined}
-                className="relative flex h-16 flex-col items-center justify-center gap-1 text-[12px] font-medium">
-                {active && (
-                  <motion.span layoutId="nav-pill" className="absolute top-1.5 h-8 w-14 rounded-full bg-secondary"
-                    transition={{ type: "spring", stiffness: 420, damping: 34 }} />
-                )}
-                <t.icon className={cn("relative size-[22px]", active ? "text-primary" : "text-foreground/70")} strokeWidth={active ? 2.2 : 1.8} />
-                <span className={cn("relative", active ? "font-semibold text-foreground" : "text-foreground/70")}>{t.label}</span>
-              </button>
-            )
-          })}
-        </div>
-      </nav>
     </div>
   )
 }

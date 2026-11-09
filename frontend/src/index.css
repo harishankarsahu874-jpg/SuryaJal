@@ -208,7 +208,7 @@
 .leaflet-bar { border: 0 !important; box-shadow: 0 4px 14px rgba(0,0,0,.25) !important; border-radius: 12px !important; overflow: hidden; }
 .leaflet-control-attribution { font-size: 10px; }
 @media (max-width: 1023px) {
-  .sj-map .leaflet-bottom { margin-bottom: calc(var(--sj-stack, 72px) + 10px); transition: margin-bottom .25s ease; }
+  .sj-map .leaflet-bottom { margin-bottom: calc(var(--sj-stack, 72px) + 10px + env(safe-area-inset-bottom)); transition: margin-bottom .25s ease; }
 }
 @media (pointer: coarse) {
   .sj-map .leaflet-control-zoom { display: none; }   /* phones pinch to zoom */

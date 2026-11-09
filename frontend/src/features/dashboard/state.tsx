@@ -9,6 +9,9 @@ import { centroid, decodePolyline, DEMO_ROOF, DEMO_ROOFS, encodePolyline, type L
 export type RoofMethod = "ai" | "ai-edited" | "manual"
 export type Tab = "map" | "solar" | "rain" | "report"
 
+/** the result views - reached via "Show More" on the map's roof card */
+const RESULT_TABS: readonly string[] = ["solar", "rain", "report"] satisfies Tab[]
+
 export interface Roof {
   latlngs: LatLng[]
   method: RoofMethod
@@ -232,7 +235,10 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
             setAddressState(q.get("a")!)
           }
           setRoof(poly, q.get("m") === "ai" ? "ai" : "manual", num("cf"), { fit: true, keepPanels: true })
-          setTabState(window.matchMedia("(min-width: 1024px)").matches ? "solar" : "solar")
+          // links open on the map with the roof outlined - "Show More" on the roof card leads on to the
+          // results. v= (written by the address bar below) reopens the result view a refresh came from.
+          const v = q.get("v")
+          if (v && RESULT_TABS.includes(v)) setTabState(v as Tab)
         } else {
           setInputs(base)
           const demoId = q.get("demo")
@@ -308,14 +314,15 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
 
   const query = useMemo(() => (roof ? buildQuery(roof, inputs, config, address) : ""), [roof, inputs, config, address])
 
-  // keep the address bar shareable
+  // keep the address bar shareable (plus the open result view, so a refresh lands back on it)
   useEffect(() => {
     if (!query) return
     const t = setTimeout(() => {
-      try { history.replaceState(null, "", `/app?${query}`) } catch { /* sandboxed */ }
+      const view = tab === "map" ? "" : `&v=${tab}`
+      try { history.replaceState(null, "", `/app?${query}${view}`) } catch { /* sandboxed */ }
     }, 400)
     return () => clearTimeout(t)
-  }, [query])
+  }, [query, tab])
 
   const value = useMemo<DashboardCtx>(() => ({
     config, roof, setRoof, clearRoof, loadDemo, inputs, setInput, address, setAddress,

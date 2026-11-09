@@ -31,7 +31,7 @@ Users can identify a roof, adjust household assumptions, compare energy and wate
 | Reporting | Three-page A4 PDF covering the roof, solar and rainwater results, with a QR code and shareable assessment links. |
 | Optional accounts | Sign up, sign in, save and reopen roofs, revoke sessions and delete an account. Guests can assess roofs without signing in. |
 
-The dashboard uses separate **Roof Map**, **Solar**, **Rainwater** and **Report** views. Desktop navigation appears at the top; mobile and tablet navigation appears at the bottom. The map occupies its own view rather than sharing a fixed-width results panel.
+The dashboard opens on a full-screen **Roof Map**, with no section tabs above it. Once a roof is selected, its card shows the roof area and a **Show More** button. Show More unfolds the **Solar** and **Rainwater** results, plus a link to the **Report**. Opening one of these views shows a section bar for moving between Solar, Rainwater and Report, or back to the map. That bar appears only on the results views. A new roof selection starts with the card folded again; adjusting the current outline leaves it open. Shared links and saved roofs open on the map with the roof outlined, and refreshing the page reopens the results view that was showing.
 
 Report downloads use a fetched PDF rather than relying solely on browser navigation, with an open-report fallback. The browser can supply a satellite crop to the backend for report generation when server-side imagery is unavailable. When opened locally, the application can obtain a LAN address for phone-accessible QR links; the phone must be on the same reachable network.
 

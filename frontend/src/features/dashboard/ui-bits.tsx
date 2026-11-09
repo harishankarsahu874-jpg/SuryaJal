@@ -259,7 +259,7 @@ export function EmptyState({ onDemo, onMap }: { onDemo: (id?: string) => void; o
       </p>
       <div className="mt-6 flex w-full max-w-xs flex-col gap-2">
         <button type="button" onClick={onMap}
-          className="inline-flex h-12 items-center justify-center gap-2 rounded-xl bg-primary font-semibold text-primary-foreground shadow-sm hover:bg-primary/90 lg:hidden">
+          className="inline-flex h-12 items-center justify-center gap-2 rounded-xl bg-primary font-semibold text-primary-foreground shadow-sm hover:bg-primary/90">
           <MapPinned className="size-[18px]" /> Open the roof map
         </button>
         <button type="button" onClick={() => onDemo()}

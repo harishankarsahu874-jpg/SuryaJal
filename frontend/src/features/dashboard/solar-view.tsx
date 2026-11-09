@@ -97,7 +97,7 @@ export function SolarView() {
               : `AI outline${roof.conf != null ? ` · ${Math.round(Math.min(1, roof.conf) * 100)}%` : ""}`}
           </Pill>
           <button type="button" onClick={() => setTab("map")}
-            className="ml-auto inline-flex items-center gap-1 rounded-full px-2 py-1 text-xs font-semibold text-sage-700 hover:bg-white/70 lg:hidden">
+            className="ml-auto inline-flex items-center gap-1 rounded-full px-2 py-1 text-xs font-semibold text-sage-700 hover:bg-white/70">
             <PenLine className="size-3.5" /> Edit on map
           </button>
         </div>
