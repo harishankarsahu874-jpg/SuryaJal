@@ -32,84 +32,39 @@ jobs:
       - name: Install tools
         run: pip install requests
 
-      - name: Probe named campus places (Google-listed places mirrored by onefivenine)
+      - name: Official campus photos from nist.edu (for matching buildings to the imagery)
         continue-on-error: true
         run: |
-          mkdir -p scripts/campus_raw
-          python - <<'EOF' 2>&1 | tee scripts/campus_raw/probe2.log
-          import html, json, re, time
-          import requests
-          S = requests.Session()
-          S.headers["User-Agent"] = "Mozilla/5.0 (X11; Linux x86_64) SuryaJal-campus-probe/1.0"
-          OUT = "scripts/campus_raw/"
-          def get(url, **kw):
-              for i in range(3):
-                  try:
-                      r = S.get(url, timeout=40, **kw)
-                      return r
-                  except Exception as e:
-                      print("ERR", url, e); time.sleep(2)
-              return None
-          def text(s):
-              return html.unescape(re.sub(r"<[^>]+>", " ", s)).replace("\xa0", " ")
-          KEY = re.compile(r"nist|national institut|galleria|atrium|attrium|\\blhc\\b|octagon|tifac|hall of residence|"
-                           r"s\\. ?m\\. public|gumti|sukudu|8 inn|core building", re.I)
-          # 1) village pages around the campus -> place ids
-          villages = ["https://www.onefivenine.com/india/villages/Ganjam/Chikiti/Palli",
-                      "https://www.onefivenine.com/india/villages/Ganjam/Rangeilunda/Kotharsingi"]
-          for idx in ("https://www.onefivenine.com/india/villag/Ganjam/Rangeilunda",
-                      "https://www.onefivenine.com/india/villag/Ganjam/Chikiti"):
-              r = get(idx)
-              if r is not None and r.ok:
-                  for href, name in re.findall(r'href="([^"]*/india/villages/Ganjam/[^"]+)"[^>]*>([^<]+)<', r.text):
-                      if re.search(r"golanth|gobind|manik|khunta|palur|paluru|randha|mantrid|kothar|palli|bhalia|ghati|"
-                                   r"chikarada|girisola|biswanath|sunadei|indrakhi|konisi|panchama|rangeilunda", name, re.I):
-                          u = href if href.startswith("http") else "https://www.onefivenine.com" + href
-                          if u not in villages:
-                              villages.append(u)
-          print("villages:", len(villages)); [print("  ", v) for v in villages]
-          places = {}
-          EXTRA = ["899627", "2096581", "2090616", "2091304", "764203", "2342338", "2103071"]
-          for pid in EXTRA:
-              places[pid] = {"pid": pid, "ctx": "explicit", "seen_on": []}
-          for v in villages:
-              r = get(v)
-              if r is None or not r.ok:
-                  print("village fail", v); continue
-              h = r.text
-              # one listing item = <h2 ...>NAME</h2> ... ADDRESS ... N KM distance ... placeId=ID
-              for m in re.finditer(r"<h2[^>]*>(.*?)</h2>(.*?)placeId=(\d+)", h, re.S):
-                  name = re.sub(r"\s+", " ", text(m.group(1))).strip()
-                  body = re.sub(r"\s+", " ", text(m.group(2))).strip()[:200]
-                  pid = m.group(3)
-                  if KEY.search(name + " " + body):
-                      e = places.setdefault(pid, {"pid": pid, "ctx": "", "seen_on": []})
-                      e["ctx"] = f"{name} | {body}"
-                      e["seen_on"].append(v.rsplit("/", 1)[-1])
-              time.sleep(0.4)
-          print("candidate places:", len(places))
-          # 2) detail pages -> coordinates
-          sample_saved = False
-          for pid, p in places.items():
-              r = get(f"https://www.onefivenine.com/listing.do?method=viewGGPlace&placeId={pid}")
-              if r is None or not r.ok:
-                  print("detail fail", pid); continue
-              h = r.text
-              if not sample_saved:
-                  sample_saved = True
-              t = re.search(r"<title>(.*?)</title>", h, re.S)
-              p["title"] = re.sub(r"\s+", " ", html.unescape(t.group(1))).strip() if t else ""
-              pairs = re.findall(r"refreshMap\(\s*(-?\d+\.\d+)\s*,\s*(-?\d+\.\d+)", h) or \
-                  re.findall(r"(1[89]\.\d{3,})\s*[,;/ ]\s*(8[45]\.\d{3,})", h)
-              lat = re.findall(r"lat\w*['\"]?\s*[:=]\s*['\"]?(1[89]\.\d+)", h, re.I)
-              lng = re.findall(r"(?:lng|lon)\w*['\"]?\s*[:=]\s*['\"]?(8[45]\.\d+)", h, re.I)
-              p["pairs"] = pairs[:6]; p["lat"] = lat[:4]; p["lng"] = lng[:4]
-              if not (pairs or lat):
-                  nums = re.findall(r"(?<![\d.])(1[89]\.\d{4,}|8[45]\.\d{4,})(?![\d])", h)
-                  p["nums"] = nums[:10]
-              print(pid, "|", p["title"], "|", pairs[:1], "|", p["ctx"][:120])
-              time.sleep(0.4)
-          json.dump(list(places.values()), open(OUT + "probe_places2.json", "w"), indent=1, ensure_ascii=False)
+          pip install pillow
+          mkdir -p scripts/campus_raw/photos
+          python - <<'EOF' 2>&1 | tee scripts/campus_raw/photos.log
+          import io, requests
+          from PIL import Image
+          B = "https://www.nist.edu/nist/"
+          files = {
+              "lhc": "campus/images/lhc.webp", "galleria": "campus/images/galleraia_building.webp",
+              "octagon": "campus/images/octagon.webp", "atrium": "campus/images/Atrium.webp",
+              "tifac": "campus/images/tifac-building.webp", "core": "campus/images/Core%20Building.webp",
+              "hostel_einstein": "campus/images/HR%201.webp", "hostel_tagore": "campus/images/HR%202.webp",
+              "hostel_curie": "campus/images/hostel1.webp", "workshop": "campus/images/workshop.webp",
+              "research_center": "campus/images/research-lab.webp", "entrepreneurship": "campus/images/compressed_DSC04750.webp",
+              "student_facility": "campus/images/student-facility-center.webp", "transport": "campus/images/DSC02429.webp",
+              "yoga": "campus/images/yoga-center.webp", "gym": "campus/images/gym.webp",
+              "library": "images/student-life/Library.jpg", "atm": "campus/images/atm.webp",
+              "swimming": "SportsCulture/images/swimming.jpg", "medical": "images/student-life/medical.jpg",
+              "rock_garden": "campus/images/student-garden.webp", "slide7": "images/New/Slide-7.webp",
+              "slide4": "images/New/Slide-4.webp", "slide13": "images/New/Slide-13.webp", "slide": "images/New/SLIDE.webp",
+          }
+          S = requests.Session(); S.headers["User-Agent"] = "Mozilla/5.0 SuryaJal-campus-probe/1.0"
+          for name, path in files.items():
+              try:
+                  r = S.get(B + path, timeout=40); r.raise_for_status()
+                  im = Image.open(io.BytesIO(r.content)).convert("RGB")
+                  print(name, im.size, len(r.content))
+                  im.thumbnail((1000, 1000))
+                  im.save(f"scripts/campus_raw/photos/{name}.jpg", quality=82)
+              except Exception as e:
+                  print("ERR", name, e)
           EOF
 
       - name: Commit results to this branch
