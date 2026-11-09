@@ -1,19 +1,27 @@
 """Builds data/campus_nist.json - the NIST University campus layer for the map
-(Institute Park, Palur Hills, Golanthara, Berhampur/Brahmapur, Odisha).
+(Institute Park, Palur Hills, Berhampur/Brahmapur, Ganjam, Odisha).
 
 Why this exists: OpenStreetMap has no NIST campus at all (no campus outline, no named
 building - checked Nov 2026), so neither place search nor the AI roof detector knows the
-campus. The building outlines here come from Overture Maps (Google Open Buildings,
-Microsoft ML footprints and OpenStreetMap, ODbL) and the section names from the curated
-table scripts/campus_nist_sections.json, checked against the 7 Jan 2026 Vantor imagery
-(0.34 m) that Esri World Imagery shows over the campus.
+campus. Overture Maps only has unnamed Google Open Buildings footprints there, several of
+them shifted 10-20 m from the imagery and the Octagon missing entirely.
 
-    pip install overturemaps pillow requests
-    python scripts/build_campus.py fetch     # internet: Overture buildings + places, OSM, Esri tiles
-    python scripts/build_campus.py preview   # imagery with numbered outlines (for naming sections)
-    python scripts/build_campus.py build     # names table + outlines -> data/campus_nist.json
+So every outline in scripts/campus_nist_sections.json is traced by hand on the Esri World
+Imagery mosaic the app uses as its basemap (Vantor, 7 Jan 2026, 0.34 m) - they line up with
+what users see. Names come from the NIST University website (nist.edu/campus and its photos);
+public place listings that mirror Google Maps pins, and Overture places, were only used as hints
+for which roof is which - no geometry was copied from them. Each building records its evidence.
+Buildings whose name is not confirmed are labelled "B1".."B7" until someone who knows the campus
+names them (edit "name"/"label"/"search" in the sections table, then run `build`).
 
-`fetch` and `preview` write to scripts/campus_raw/ (scratch, not needed by the app).
+    python scripts/build_campus.py build     # sections table -> data/campus_nist.json (no internet)
+
+Optional helpers for re-tracing (internet; `pip install overturemaps pillow requests`):
+
+    python scripts/build_campus.py fetch     # Overture buildings + places, OSM, Esri tiles
+    python scripts/build_campus.py preview   # imagery with numbered outlines
+
+`fetch` and `preview` write to scripts/campus_raw/ (scratch, git-ignored, not needed by the app).
 """
 from __future__ import annotations
 
@@ -72,16 +80,20 @@ def ring_area_m2(ring: list[list[float]]) -> float:
 
 
 def ring_centroid(ring: list[list[float]]) -> tuple[float, float]:
-    """(lon, lat) area centroid - falls back to the vertex mean for slivers."""
+    """(lon, lat) area centroid - falls back to the vertex mean for slivers. Worked out relative to
+    the first corner: with raw degrees (84.7 x 19.2) the cross products of a 150 m2 roof cancel so
+    badly that the centroid lands tens of metres away."""
+    x0, y0 = ring[0]
+    pts = [(x - x0, y - y0) for x, y in ring]
     a = cx = cy = 0.0
-    for (x1, y1), (x2, y2) in zip(ring, ring[1:] + ring[:1]):
+    for (x1, y1), (x2, y2) in zip(pts, pts[1:] + pts[:1]):
         c = x1 * y2 - x2 * y1
         a += c
         cx += (x1 + x2) * c
         cy += (y1 + y2) * c
-    if abs(a) < 1e-14:
+    if abs(a) < 1e-16:
         return (sum(p[0] for p in ring) / len(ring), sum(p[1] for p in ring) / len(ring))
-    return (cx / (3 * a), cy / (3 * a))
+    return (x0 + cx / (3 * a), y0 + cy / (3 * a))
 
 
 def point_in_ring(lon: float, lat: float, ring: list[list[float]]) -> bool:
@@ -320,55 +332,168 @@ def cmd_preview(_args) -> None:
 
 
 # ---------------------------------------------------------------------------- build
+KINDS = ("academic", "research", "hostel", "sports", "ground", "transport", "facility", "construction", "other")
+
+
+def _ll_ring(ring_latlon: list) -> list[list[float]]:
+    """[[lat, lon], ...] -> [[lon, lat], ...] without a closing duplicate."""
+    ring = [[float(lon), float(lat)] for lat, lon in ring_latlon]
+    if len(ring) > 1 and ring[0] == ring[-1]:
+        ring.pop()
+    return ring
+
+
+def _seg_dist(px: float, py: float, ax: float, ay: float, bx: float, by: float) -> float:
+    dx, dy = bx - ax, by - ay
+    ll = dx * dx + dy * dy
+    t = 0.0 if ll == 0 else max(0.0, min(1.0, ((px - ax) * dx + (py - ay) * dy) / ll))
+    return math.hypot(px - (ax + t * dx), py - (ay + t * dy))
+
+
+def label_point(ring: list[list[float]], holes: list[list[list[float]]]) -> tuple[float, float]:
+    """(lon, lat) for the label - and the tap target - of a building: the roof point farthest from
+    every edge (a "pole of inaccessibility", nudged towards the centroid on ties), so it sits well
+    inside L-shaped, U-shaped and courtyard buildings instead of on a corner or in a courtyard."""
+    lat0 = math.radians(sum(p[1] for p in ring) / len(ring))
+    kx, ky = 111_320 * math.cos(lat0), 110_574
+    x0, y0 = ring[0]
+    def m(p):
+        return ((p[0] - x0) * kx, (p[1] - y0) * ky)
+    outer = [m(p) for p in ring]
+    inner = [[m(p) for p in h] for h in holes]
+    edges = [(a, b) for r in [outer] + inner for a, b in zip(r, r[1:] + r[:1])]
+    cx, cy = m(ring_centroid(ring))
+    def inside(x, y):
+        return point_in_ring(x, y, outer) and not any(point_in_ring(x, y, h) for h in inner)
+    def score(x, y):
+        clear = min(_seg_dist(x, y, a[0], a[1], b[0], b[1]) for a, b in edges)
+        return clear - 0.03 * math.hypot(x - cx, y - cy)
+    xs, ys = [p[0] for p in outer], [p[1] for p in outer]
+    n = 40
+    best = None
+    for i in range(n + 1):
+        for j in range(n + 1):
+            x = min(xs) + (max(xs) - min(xs)) * i / n
+            y = min(ys) + (max(ys) - min(ys)) * j / n
+            if inside(x, y) and (best is None or score(x, y) > best[0]):
+                best = (score(x, y), x, y)
+    if best is None:                                       # sliver: fall back to the centroid
+        x, y = cx, cy
+    else:
+        step = max(max(xs) - min(xs), max(ys) - min(ys)) / n
+        for _ in range(6):                                 # refine around the best grid point
+            _, bx, by = best
+            for dx in (-step, 0.0, step):
+                for dy in (-step, 0.0, step):
+                    if inside(bx + dx, by + dy) and score(bx + dx, by + dy) > best[0]:
+                        best = (score(bx + dx, by + dy), bx + dx, by + dy)
+            step /= 2
+        _, x, y = best
+    return x0 + x / kx, y0 + y / ky
+
+
+def convex_hull(pts: list[tuple[float, float]]) -> list[tuple[float, float]]:
+    pts = sorted(set(pts))
+    if len(pts) < 3:
+        return pts
+    def cross(o, a, b): return (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0])
+    lo: list = []
+    hi: list = []
+    for p in pts:
+        while len(lo) >= 2 and cross(lo[-2], lo[-1], p) <= 0:
+            lo.pop()
+        lo.append(p)
+    for p in reversed(pts):
+        while len(hi) >= 2 and cross(hi[-2], hi[-1], p) <= 0:
+            hi.pop()
+        hi.append(p)
+    return lo[:-1] + hi[:-1]
+
+
+def campus_outline(buildings: list[dict], margin_m: float = 30.0) -> list[list[float]]:
+    """Convex hull of every traced outline grown by `margin_m` - only used to frame the campus
+    (bounds, zoom-out highlight), NOT the legal campus boundary."""
+    lat0 = math.radians(CENTER[0])
+    dlat, dlon = margin_m / 110_574, margin_m / (111_320 * math.cos(lat0))
+    pts = []
+    for b in buildings:
+        for lon, lat in b["_ring"]:
+            for k in range(8):
+                a = math.pi * k / 4
+                pts.append((lon + dlon * math.cos(a), lat + dlat * math.sin(a)))
+    return [[round(lat, 6), round(lon, 6)] for lon, lat in convex_hull(pts)]
+
+
 def cmd_build(_args) -> None:
     spec = json.loads(SECTIONS.read_text())
     by_id = {}
-    if (RAW / "buildings.geojson").exists():
+    if (RAW / "buildings.geojson").exists():          # legacy: outline taken from an Overture footprint
         for f in json.loads((RAW / "buildings.geojson").read_text()).get("features", []):
             p = f.get("properties") or {}
             rings = rings_of(f.get("geometry"))
             if rings:
-                by_id[p.get("id") or f.get("id")] = {"ring": max(rings, key=lambda r: ring_area_m2(r[:-1])),
-                                                     "sources": source_names(p)}
-    out_b = []
-    used_sources: set[str] = set()
+                by_id[p.get("id") or f.get("id")] = max(rings, key=lambda r: ring_area_m2(r[:-1]))[:-1]
+    out_b, seen = [], set()
     for s in spec["buildings"]:
-        if "ring" in s:                               # traced by hand from the imagery: [[lat, lon], ...]
-            ring = [[lon, lat] for lat, lon in s["ring"]]
-            srcs = ["Traced from Esri World Imagery"]
+        bid = s["id"]
+        if bid in seen:
+            sys.exit(f"duplicate building id {bid!r}")
+        seen.add(bid)
+        if s.get("kind") not in KINDS:
+            sys.exit(f"{bid}: kind must be one of {KINDS}")
+        if "ring" in s:                               # traced by hand on the imagery: [[lat, lon], ...]
+            ring = _ll_ring(s["ring"])
+        elif s.get("overture_id") in by_id:
+            ring = by_id[s["overture_id"]]
         else:
-            hit = by_id.get(s["overture_id"])
-            if not hit:
-                sys.exit(f"overture id {s['overture_id']} ({s['name']}) not in campus_raw/buildings.geojson - run fetch")
-            ring, srcs = hit["ring"][:-1], hit["sources"]
-        used_sources.update(srcs)
-        area = ring_area_m2(ring)
-        clon, clat = ring_centroid(ring)
-        out_b.append({
-            "id": s["id"], "name": s["name"], "kind": s["kind"],
+            sys.exit(f"{bid}: needs a traced 'ring' (or an overture_id present in campus_raw/buildings.geojson)")
+        holes = [_ll_ring(h) for h in s.get("holes", [])]
+        if len(ring) < 3 or any(len(h) < 3 for h in holes):
+            sys.exit(f"{bid}: rings need at least 3 points")
+        for lon, lat in ring:
+            if not (W <= lon <= E and S <= lat <= N):
+                sys.exit(f"{bid}: point {lat}, {lon} is outside the campus area")
+        area = ring_area_m2(ring) - sum(ring_area_m2(h) for h in holes)
+        if s.get("label_at"):                         # hand-placed label (keeps it clear of a neighbour)
+            ly, lx = s["label_at"]
+        else:
+            lx, ly = label_point(ring, holes)
+        row = {
+            "id": bid, "name": s["name"], "label": s.get("label") or s["name"], "kind": s["kind"],
             **({"about": s["about"]} if s.get("about") else {}),
             **({"aliases": s["aliases"]} if s.get("aliases") else {}),
+            **({"sections": s["sections"]} if s.get("sections") else {}),
             **({"floors": s["floors"]} if s.get("floors") else {}),
-            "area": round(area), "center": [round(clat, 6), round(clon, 6)],
+            "search": bool(s.get("search", True)),
+            **({"roof": False} if s.get("roof") is False else {}),     # open ground / pool / site: not a roof
+            "area": round(area), "center": [round(ly, 6), round(lx, 6)],
             "poly": [[round(lat, 6), round(lon, 6)] for lon, lat in ring],
-        })
+            **({"holes": [[[round(lat, 6), round(lon, 6)] for lon, lat in h] for h in holes]} if holes else {}),
+            "_ring": ring,
+        }
+        out_b.append(row)
     campus = spec["campus"]
-    lats = [p[0] for p in campus["boundary"]]
-    lons = [p[1] for p in campus["boundary"]]
+    boundary = campus.get("boundary") or campus_outline(out_b)
+    for b in out_b:
+        b.pop("_ring")
+    lats = [p[0] for p in boundary]
+    lons = [p[1] for p in boundary]
     data = {
         "id": campus["id"], "name": campus["name"], "short": campus["short"], "full_name": campus["full_name"],
         "address": campus["address"], "aliases": campus["aliases"],
         "center": campus["center"], "zoom": campus.get("zoom", 17),
         "bounds": [[min(lats), min(lons)], [max(lats), max(lons)]],
-        "boundary": campus["boundary"],
+        "boundary": boundary,
         "imagery": campus.get("imagery", ""),
-        "attribution": "Campus outlines: Overture Maps (Google Open Buildings, Microsoft, OpenStreetMap - ODbL), "
-                       "checked against Esri World Imagery",
-        "sources": sorted(used_sources),
+        "attribution": "Campus outlines traced on Esri World Imagery (Vantor); names from nist.edu, "
+                       "Google Maps listings and Overture Maps",
         "buildings": out_b,
     }
-    OUT.write_text(json.dumps(data, ensure_ascii=False, indent=1) + "\n")
-    print(f"wrote {OUT.relative_to(ROOT)}: {len(out_b)} buildings, sources {sorted(used_sources)}")
+    OUT.parent.mkdir(parents=True, exist_ok=True)
+    OUT.write_text(json.dumps(data, ensure_ascii=False, separators=(",", ":")) + "\n")
+    named = sum(1 for b in out_b if b["search"])
+    print(f"wrote {OUT.relative_to(ROOT)}: {len(out_b)} outlines ({named} named), "
+          f"{OUT.stat().st_size // 1024} KB")
 
 
 def main() -> None:

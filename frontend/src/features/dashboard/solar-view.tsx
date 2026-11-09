@@ -93,7 +93,8 @@ export function SolarView() {
         <div className="mt-3 flex flex-wrap items-center gap-1.5">
           <Pill tone="plain" className="bg-white/70">{fmtIN(r.area_m2)} m² roof</Pill>
           <Pill tone="plain" className="bg-white/70">
-            {roof.method === "manual" ? "Hand-drawn outline" : roof.method === "ai-edited" ? "AI + hand-tuned"
+            {roof.method === "manual" ? "Hand-drawn outline" : roof.method === "mapped" ? "Campus map outline"
+              : roof.method === "ai-edited" ? "AI + hand-tuned"
               : `AI outline${roof.conf != null ? ` · ${Math.round(Math.min(1, roof.conf) * 100)}%` : ""}`}
           </Pill>
           <button type="button" onClick={() => setTab("map")}

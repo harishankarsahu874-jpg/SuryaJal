@@ -38,7 +38,7 @@ from .geo import (decode_polyline, encode_polyline, latlon_to_px, polygon_area_m
                   polygon_centroid, polygon_perimeter_m, px_to_latlon)
 from .layout import auto_layout
 from .rain import RULE_NAME, RULE_SHORT, assess_rain, green_score
-from . import pincode, places
+from . import campus, pincode, places
 from .report import build_report_pdf, qr_svg, roof_thumbnail
 from .segment import RoofSegmenter, classify_surface, mask_to_polygon
 from .solar import assess_solar, odisha_state_subsidy, pm_surya_ghar_subsidy
@@ -353,6 +353,24 @@ def _merge_rows(primary: list, extra: list, limit: int = 8) -> list:
     return out
 
 
+def _campus_rows(q: str) -> list:
+    out = []
+    for r in campus.search(q, limit=8):
+        out.append({**r, **{k: v for k, v in odisha.locate(r["lat"], r["lon"]).items()
+                            if k in ("district", "discom")}})
+    return out
+
+
+@app.get("/api/campus/{cid}")
+async def campus_layer(cid: str):
+    """Building outlines + labels of a mapped campus (data/campus_<id>.json) for the map layer."""
+    data = campus.raw(cid)
+    if data is None:
+        raise HTTPException(404, "No campus map with that name.")
+    return Response(data, media_type="application/json",
+                    headers={"Cache-Control": "public, max-age=3600"})
+
+
 @app.get("/api/suggest")
 async def suggest(q: str = Query(..., min_length=2, max_length=200)):
     """Instant type-ahead suggestions from the bundled Odisha data (PINs, towns,
@@ -367,7 +385,10 @@ async def suggest(q: str = Query(..., min_length=2, max_length=200)):
                                 "postcode" if hit["exact"] else "postcode_area"))
     for name, lat, lon, typ in places.search(q, limit=8):
         out.append(_geo_row(f"{name}, Odisha", lat, lon, typ))
-    return _merge_rows([], out, limit=8)
+    # mapped campus sections first: they sit within metres of each other, so they skip the
+    # ~1 km duplicate check (which then drops the gazetteer's own copy of the campus)
+    rows = _campus_rows(q)
+    return _merge_rows(rows, out, limit=max(8, len(rows) + 2))
 
 
 @app.get("/api/geocode")
@@ -419,6 +440,9 @@ async def geocode(q: str = Query(..., min_length=2, max_length=200)):
     for name, lat, lon, typ in places.search(q):
         offline.append(_geo_row(f"{name}, Odisha", lat, lon, typ))
     out = _merge_rows(out, offline)
+    rows = _campus_rows(q)
+    if rows:                               # exact campus buildings beat whatever Nominatim guessed
+        out = _merge_rows(rows, out, limit=max(8, len(rows) + 2))
     out.sort(key=lambda r: 0 if odisha.in_odisha(r["lat"], r["lon"]) else 1)   # Odisha first
     if not out and data:                   # nothing above matched - show Indian results we found
         for d in data:
@@ -591,6 +615,8 @@ async def _report_response(q: dict, request: Request, crop) -> Response:
     if meta["method"] == "ai":
         conf = f", confidence {float(meta['conf']):.2f}" if meta["conf"] else ""
         method_label = f"AI - MobileSAM (Segment Anything){conf}"
+    elif meta["method"] == "mapped":
+        method_label = "campus map - traced on the satellite imagery"
     else:
         method_label = "drawn by hand on satellite map"
     pdf = await run_in_threadpool(build_report_pdf, a, thumb, share_url,

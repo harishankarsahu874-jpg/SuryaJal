@@ -4,11 +4,13 @@ import "leaflet/dist/leaflet.css"
 import { AnimatePresence, motion } from "motion/react"
 import { toast } from "sonner"
 import {
-  ArrowRight, ChartColumn, Check, ChevronDown, Droplet, Eraser, Loader2, MapPin, Minus, PenLine, Plus, RotateCcw,
-  Search, Sparkles, Sun, Undo2, X,
+  ArrowRight, BedDouble, Building, BusFront, ChartColumn, Check, ChevronDown, Droplet, Eraser, Fuel, GraduationCap,
+  Landmark, Loader2, MapPin, Minus, PenLine, Plus, RotateCcw, Search, ShoppingBag, Sparkles, Stethoscope, Sun, Undo2,
+  UtensilsCrossed, X,
 } from "lucide-react"
 import { api, type SegmentResponse } from "@/lib/api"
-import { searchPlaces, type GeoResult } from "@/lib/geosearch"
+import { matchesQuery, searchPlaces, type GeoResult, type SearchOutcome } from "@/lib/geosearch"
+import { buildingAt, isRoof, keyholeRing, KIND_STYLE, loadCampus, type Campus, type CampusBuilding } from "@/lib/campus"
 import { captureCrop } from "@/lib/mapcrop"
 import { areaM2, INDIA_BOUNDS, ODISHA_CENTER, ODISHA_CITIES, ODISHA_ZOOM, type LatLng } from "@/lib/geo"
 import { EsriImagery } from "@/lib/imagery"
@@ -29,7 +31,7 @@ function zoomFor(type: string) {
   if (["city", "town", "administrative", "county", "state_district"].includes(type)) return 13
   if (type === "postcode") return 15
   if (type === "postcode_area") return 12
-  if (type === "poi") return 18          // landmarks: campus / temple level
+  if (type === "poi" || type === "campus") return 18          // landmarks: campus / temple level
   return 17
 }
 
@@ -67,14 +69,54 @@ export function MapPanel({ visible }: { visible: boolean }) {
   // roof starts folded again (fine-tuning the current one keeps it open)
   const [more, setMore] = useState(false)
   const setHint = (html: ReactNode, busy = false) => setHintState({ html, busy })
+  // a hint that answers what the user just did ("Now at Puri…", "5 hotels…") outlives the idle
+  // hints the end of the map flight would otherwise put back right away
+  const hintHold = useRef(0)
+  const holdHint = (html: ReactNode, ms = 5000) => { hintHold.current = Date.now() + ms; setHint(html) }
+  // the mapped NIST University campus (outlines + labels of every building, data/campus_nist.json)
+  const [campus, setCampus] = useState<Campus | null>(null)
+  const campusRef = useRef<Campus | null>(null)
+  campusRef.current = campus
+  const campusFx = useRef<{ flash: (id: string) => void } | null>(null)
+  const [campusOn, setCampusOn] = useState(false)          // campus outlines on screen (legend)
+  const [focus, setFocus] = useState<string | null>(null)  // the section a search asked for
+  const [reveal, setReveal] = useState(0)                   // bumped when a tapped building must stay in sight
+  const resultPins = useRef<L.LayerGroup | null>(null)     // "hotels in Berhampur" -> every hit pinned
 
   const idleHint = useCallback(() => {
-    if (S.mode === "draw") return
+    if (S.mode === "draw" || Date.now() < hintHold.current) return
     const c = ctxRef.current
-    if (c.roof) setHint(<>Tap another roof, drag the <b>yellow dots</b> to fine-tune, or use ＋ / －</>)
+    if (c.roof?.method === "mapped") setHint(<>Tap another building, or <b>Show More</b> for solar &amp; rainwater</>)
+    else if (c.roof) setHint(<>Tap another roof, drag the <b>yellow dots</b> to fine-tune, or use ＋ / －</>)
+    else if (S.zoom >= 16 && campusRef.current && mapRef.current?.getBounds().intersects(campusRef.current.bounds))
+      setHint(<>Tap any <b>NIST building</b> to see it and check its roof</>)
     else if (S.zoom < 17) setHint(<>Zoom in closer to your house, then <b>tap its roof</b></>)
     else setHint(<>Tap the <b>middle of your roof</b> 👆</>)
   }, [S])
+
+  /** the free strip of map between the search box and whatever covers the bottom (tool stack, or on
+   *  phones the attribution line that sits just above it) - in map container pixels */
+  const clearArea = () => {
+    const map = mapRef.current, top = topRef.current, stack = stackRef.current, wrap = wrapRef.current
+    if (!map || !top || !stack || !wrap) return null
+    const attr = map.getContainer().querySelector<HTMLElement>(".leaflet-control-attribution")
+    const attrTop = attr ? attr.getBoundingClientRect().top - wrap.getBoundingClientRect().top : Infinity
+    return { top: top.offsetTop + top.offsetHeight + 8, bottom: Math.min(stack.offsetTop, attrTop) - 8 }
+  }
+
+  /** fit bounds into the part of the map the search box (top) and the tool stack (bottom) leave free */
+  const fitClear = (b: L.LatLngBounds, maxZoom: number, fly = true) => {
+    const map = mapRef.current
+    if (!map) return
+    const area = clearArea(), h = map.getSize().y
+    const padTop = area ? area.top + 4 : 60
+    const padBottom = area ? Math.max(16, h - area.bottom + 4) : 60
+    const opts: L.FitBoundsOptions = h - padTop - padBottom > 140
+      ? { paddingTopLeft: [16, padTop], paddingBottomRight: [16, padBottom], maxZoom }
+      : { padding: [24, 24], maxZoom }                 // tiny screen: just fit
+    if (fly) map.flyToBounds(b, { ...opts, duration: 1.1 })
+    else map.fitBounds(b, opts)
+  }
 
   // ------------------------------------------------------------ map setup (once)
   useEffect(() => {
@@ -90,7 +132,7 @@ export function MapPanel({ visible }: { visible: boolean }) {
     // available" tile). EsriImagery detects that and silently shows the nearest zoom that has a photo.
     new EsriImagery(`${ESRI}/World_Imagery/MapServer/tile/{z}/{y}/{x}`, {
       maxNativeZoom: 19, maxZoom: 21,
-      attribution: "Imagery © Esri, Maxar, Earthstar Geographics | Search © OpenStreetMap",
+      attribution: "Imagery © Esri, Vantor, Earthstar Geographics | Search © Esri, OpenStreetMap",
     }).addTo(map)
     const labels = L.layerGroup([
       L.tileLayer(`${ESRI}/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}`, { maxNativeZoom: 19, maxZoom: 21, opacity: 0.9 }),
@@ -143,6 +185,166 @@ export function MapPanel({ visible }: { visible: boolean }) {
     if (visible) setTimeout(() => mapRef.current?.invalidateSize(), 50)
   }, [visible])
 
+  // ------------------------------------------------------------ NIST University campus layer
+  useEffect(() => {
+    let alive = true
+    void loadCampus("nist").then((c) => { if (alive && c) setCampus(c) })
+    return () => { alive = false }
+  }, [])
+
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !campus) return
+    // own panes: outlines under the roof outline, labels above it but under the roof's handles
+    for (const [name, z] of [["sj-campus", "390"], ["sj-campus-labels", "450"]] as const) {
+      if (!map.getPane(name)) {
+        const pane = map.createPane(name)
+        pane.style.zIndex = z
+        pane.style.pointerEvents = "none"
+      }
+    }
+    const byId = new Map(campus.buildings.map((b) => [b.id, b]))
+    const style = (b: CampusBuilding): L.PathOptions => {
+      const k = KIND_STYLE[b.kind] ?? KIND_STYLE.other
+      return { color: k.color, weight: map.getZoom() >= 18 ? 2.2 : 1.6, opacity: 0.95, fillColor: k.color,
+        fillOpacity: isRoof(b) ? 0.16 : 0.07, dashArray: k.dash }
+    }
+    const outlines = L.layerGroup(), labels = L.layerGroup()
+    const polys = new Map<string, L.Polygon>()
+    for (const b of campus.buildings) {
+      polys.set(b.id, L.polygon([b.poly, ...(b.holes ?? [])], { ...style(b), pane: "sj-campus", interactive: false }).addTo(outlines))
+    }
+
+    // labels: greedy placement (important buildings first, more detail as you zoom in, a label
+    // that would overlap another one steps down to a shorter form or waits for more zoom)
+    const fam = getComputedStyle(map.getContainer()).fontFamily || "sans-serif"
+    const FONT_B = `700 11.5px ${fam}`, FONT_S = `600 10px ${fam}`, FONT_T = `800 12px ${fam}`
+    const cv = document.createElement("canvas").getContext("2d")
+    const measure = (t: string, font: string) => {
+      if (!cv) return t.length * 7
+      cv.font = font
+      return cv.measureText(t).width
+    }
+    const esc = (t: string) => t.replace(/[&<>"]/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;" })[ch]!)
+    const kindLine = (b: CampusBuilding) => b.search
+      ? [KIND_STYLE[b.kind]?.label, b.floors ? `${b.floors} floors` : ""].filter(Boolean).join(" · ")
+      : "Name not confirmed"
+    const sectionLine = (b: CampusBuilding) => b.sections?.length
+      ? b.sections.slice(0, 3).join(" · ") + (b.sections.length > 3 ? ` +${b.sections.length - 3}` : "")
+      : kindLine(b)
+    const RANK: Record<string, number> = { academic: 0, research: 1, hostel: 1, sports: 2, facility: 3, transport: 3,
+      ground: 4, construction: 5, other: 6 }
+    const items = [...campus.buildings]
+      .sort((a, b) => (RANK[a.kind] ?? 6) - (RANK[b.kind] ?? 6) || b.area - a.area)
+      .map((b) => ({ b, html: "", m: L.marker(b.center, { pane: "sj-campus-labels", interactive: false, keyboard: false,
+        icon: L.divIcon({ className: "", iconSize: [0, 0], html: "" }) }) }))
+    const itemOf = new Map(items.map((it) => [it.b.id, it]))
+    const titleAt = L.latLng(campus.bounds[1][0] + 0.00012, campus.center[1])
+    const title = L.marker(titleAt, { pane: "sj-campus-labels", interactive: false, keyboard: false,
+      icon: L.divIcon({ className: "", iconSize: [0, 0], html: `<div class="sj-campus-title">${esc(campus.name)}</div>` }) })
+
+    const placeLabels = () => {
+      const z = map.getZoom()
+      const want = z >= 19 ? 2 : z >= 18 ? 1 : 0
+      const boxes: number[][] = []
+      const fits = (x: number, y: number, w: number, h: number) => {
+        const bx = [x - w / 2 - 3, y - h / 2 - 2, x + w / 2 + 3, y + h / 2 + 2]
+        if (boxes.some((q) => bx[0] < q[2] && bx[2] > q[0] && bx[1] < q[3] && bx[3] > q[1])) return false
+        boxes.push(bx)
+        return true
+      }
+      labels.clearLayers()
+      if (z < 18) {
+        const p = map.project(titleAt, z)
+        if (fits(p.x, p.y - 11, measure(campus.name.toUpperCase(), FONT_T) + 30, 24)) labels.addLayer(title)
+      }
+      for (const it of items) {
+        if (!it.b.search && z < 17) continue                  // unnamed blocks: only once there is room
+        const p = map.project(it.b.center, z)
+        for (let lv = want; lv >= 0; lv--) {
+          const sub = lv === 0 ? "" : lv === 1 ? kindLine(it.b) : sectionLine(it.b)
+          const w = Math.max(measure(it.b.label, FONT_B), sub ? measure(sub, FONT_S) + 4 : 0) + 26
+          if (!fits(p.x, p.y, w, sub ? 37 : 20)) continue
+          const html = `<div class="sj-campus-label${it.b.search ? "" : " unnamed"}" style="--k:${(KIND_STYLE[it.b.kind] ?? KIND_STYLE.other).color}">` +
+            `<span><i></i>${esc(it.b.label)}</span>${sub ? `<small>${esc(sub)}</small>` : ""}</div>`
+          if (html !== it.html) {
+            it.m.setIcon(L.divIcon({ className: "", iconSize: [0, 0], html }))
+            it.html = html
+          }
+          labels.addLayer(it.m)
+          break
+        }
+      }
+    }
+
+    // zoomed out: one tappable "NIST University" badge instead of 22 tiny outlines
+    const CAP = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.42 10.922a1 1 0 0 0-.019-1.838L12.83 5.18a2 2 0 0 0-1.66 0L2.6 9.08a1 1 0 0 0 0 1.832l8.57 3.908a2 2 0 0 0 1.66 0z"/><path d="M22 10v6"/><path d="M6 12.5V16a6 3 0 0 0 12 0v-3.5"/></svg>'
+    const badge = L.marker(campus.center, { keyboard: false, zIndexOffset: 400, title: `${campus.name} - tap to open the campus map`,
+      icon: L.divIcon({ className: "", iconSize: [0, 0], html: `<div class="sj-campus-badge">${CAP}<span>${esc(campus.name)}</span></div>` }) })
+      .on("click", () => fitClear(L.latLngBounds(campus.bounds), campus.zoom))
+
+    let hovered: string | null = null
+    const hoverTip = L.tooltip({ direction: "top", className: "sj-place-label", offset: [0, -4], interactive: false })
+    const setHover = (b: CampusBuilding | null) => {
+      const id = b?.id ?? null
+      if (id === hovered) return
+      if (hovered) { const ob = byId.get(hovered); if (ob) polys.get(hovered)?.setStyle(style(ob)) }
+      hovered = id
+      hoverTip.remove()
+      if (b) {
+        polys.get(b.id)?.setStyle({ weight: 3.2, fillOpacity: isRoof(b) ? 0.34 : 0.16 })
+        const it = itemOf.get(b.id)
+        if (!it || !labels.hasLayer(it.m)) hoverTip.setLatLng(b.center).setContent(esc(b.name)).addTo(map)
+      }
+      map.getContainer().style.cursor = b ? "pointer" : "crosshair"
+    }
+    const onMove = (e: L.LeafletMouseEvent) => {
+      if (S.mode === "draw" || S.busy || map.getZoom() < 16) return setHover(null)
+      setHover(buildingAt(campus, e.latlng.lat, e.latlng.lng))
+    }
+    const onOut = () => setHover(null)
+    const cb = L.latLngBounds(campus.bounds)
+    const update = () => {
+      const z = map.getZoom()
+      if (z >= 11 && z < 16) badge.addTo(map)
+      else badge.remove()
+      if (z >= 16) {
+        outlines.addTo(map)
+        labels.addTo(map)
+        polys.forEach((poly, id) => { if (id !== hovered) poly.setStyle({ weight: z >= 18 ? 2.2 : 1.6 }) })
+        placeLabels()
+      } else {
+        outlines.remove()
+        labels.remove()
+        setHover(null)
+      }
+      setCampusOn(z >= 16 && map.getBounds().intersects(cb))
+    }
+    const onMoveEnd = () => setCampusOn(map.getZoom() >= 16 && map.getBounds().intersects(cb))
+    campusFx.current = {
+      flash: (id) => {
+        const poly = polys.get(id), b = byId.get(id)
+        if (!poly || !b) return
+        poly.setStyle({ weight: 4, fillOpacity: 0.42 })
+        setTimeout(() => { if (hovered !== id) poly.setStyle(style(b)) }, 1800)
+      },
+    }
+    map.on("zoomend", update)
+    map.on("moveend", onMoveEnd)
+    map.on("mousemove", onMove)
+    map.on("mouseout", onOut)
+    update()
+    return () => {
+      map.off("zoomend", update)
+      map.off("moveend", onMoveEnd)
+      map.off("mousemove", onMove)
+      map.off("mouseout", onOut)
+      ;[outlines, labels, badge, hoverTip].forEach((l) => l.remove())
+      campusFx.current = null
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [campus])
+
   // keep Leaflet's bottom controls (zoom, layers, scale) above our floating tool stack
   useEffect(() => {
     const el = stackRef.current, wrap = wrapRef.current
@@ -153,21 +355,22 @@ export function MapPanel({ visible }: { visible: boolean }) {
   }, [])
 
   // the unfolded roof card leaves a phone little map: keep the picked roof in sight in the gap
-  // between the search box and the card (also when coming back from the results)
+  // between the search box and the card (also when coming back from the results, and after a
+  // campus building was tapped right above the card)
   useEffect(() => {
-    if (!more || !visible) return
+    if (!visible || (!more && !reveal)) return
     const t = setTimeout(() => {
-      const map = mapRef.current, ly = layers.current, top = topRef.current, stack = stackRef.current
-      if (!map || !ly || !top || !stack || !ctxRef.current.roof) return
+      const map = mapRef.current, ly = layers.current, area = clearArea()
+      if (!map || !ly || !area || !ctxRef.current.roof) return
       const b = ly.roof.getBounds()
       const y1 = map.latLngToContainerPoint(b.getNorthWest()).y
       const y2 = map.latLngToContainerPoint(b.getSouthEast()).y
-      const gapTop = top.offsetTop + top.offsetHeight + 8, gapBottom = stack.offsetTop - 8
+      const gapTop = area.top, gapBottom = area.bottom
       if (gapBottom - gapTop < 40 || (y1 >= gapTop && y2 <= gapBottom)) return
       map.panBy([0, Math.round((y1 + y2) / 2 - (gapTop + gapBottom) / 2)])
     }, 280)                                         // once the card has finished unfolding
     return () => clearTimeout(t)
-  }, [more, visible])
+  }, [more, visible, reveal])
 
   // ------------------------------------------------------------ roof -> map
   const roof = ctx.roof
@@ -189,8 +392,8 @@ export function MapPanel({ visible }: { visible: boolean }) {
     }
     ly.roof.setLatLngs(roof.latlngs)
     placeTip(roof.latlngs)
-    // draggable corner handles
-    roof.latlngs.forEach((ll, i) => {
+    // draggable corner handles (campus-map outlines are exact - no handles; Draw can still redo one)
+    if (roof.method !== "mapped") roof.latlngs.forEach((ll, i) => {
       const m = L.marker(ll, { draggable: true, icon: divIcon("sj-vtx"), keyboard: false, zIndexOffset: 1000 })
       const live = roof.latlngs.map((p) => [p[0], p[1]] as LatLng)
       m.on("drag", (e) => {
@@ -210,7 +413,7 @@ export function MapPanel({ visible }: { visible: boolean }) {
     })
     if (roof.fitNonce && roof.fitNonce !== lastFit.current) {
       lastFit.current = roof.fitNonce
-      map.fitBounds(ly.roof.getBounds(), { maxZoom: 19, padding: [60, 60] })
+      fitClear(ly.roof.getBounds(), 19, false)
     }
     idleHint()
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -240,12 +443,19 @@ export function MapPanel({ visible }: { visible: boolean }) {
   // ------------------------------------------------------------ clicks
   function onMapClick(latlng: L.LatLng) {
     const map = mapRef.current!
+    hintHold.current = 0
     if (S.mode === "draw") return addDrawPoint(latlng)
     if (S.busy) return void toast("Still tracing the roof… one second ⏳")
     if (map.getZoom() < 16) {
       map.flyTo(latlng, 19, { duration: 0.9 })
       setHint(<>Now tap the <b>middle of your roof</b> 👆</>)
       return
+    }
+    // a building of the mapped campus: use its traced outline (refining an AI roof still goes to the AI)
+    const cmp = campusRef.current
+    if (cmp && !(ctxRef.current.roof && S.refine !== null && S.aiPoints.length)) {
+      const b = buildingAt(cmp, latlng.lat, latlng.lng)
+      if (b) return pickBuilding(b)
     }
     const pt: SegPoint = { lat: latlng.lat, lon: latlng.lng, label: 1 }
     if (ctxRef.current.roof && S.refine !== null && S.aiPoints.length) {
@@ -309,6 +519,81 @@ export function MapPanel({ visible }: { visible: boolean }) {
       showPrompts()
       tick()
     }
+  }
+
+  // ------------------------------------------------------------ campus buildings & search results
+  /** select a campus building as the roof (its traced outline, courtyards left open) */
+  function pickBuilding(b: CampusBuilding, opts: { fly?: boolean; section?: string | null } = {}) {
+    const map = mapRef.current, c = campusRef.current
+    if (!map || !c) return
+    placePin.current?.remove()
+    placePin.current = null
+    if (!isRoof(b)) {                    // pool, courts, ground, bus park, building site
+      campusFx.current?.flash(b.id)
+      if (opts.fly) fitClear(L.latLngBounds(b.poly), 19)
+      holdHint(<><b>{b.name}</b> — open area, not a roof. Tap a building to check its roof.</>)
+      return
+    }
+    S.aiPoints = []
+    S.refine = null
+    layers.current?.prompts.clearLayers()
+    setMore(false)
+    setFocus(opts.section ?? null)
+    ctxRef.current.setRoof(keyholeRing(b.poly, b.holes), "mapped", null, { fit: !!opts.fly, address: `${b.name}, ${c.name}, Berhampur` })
+    if (!opts.fly) setReveal((n) => n + 1)
+    holdHint(<><b>{opts.section ?? b.name}</b> — tap <b>Show More</b> for solar &amp; rainwater</>)
+  }
+
+  /** a campus search row / the NIST chip: the whole campus, or straight to one building */
+  async function goCampus(g?: GeoResult) {
+    const map = mapRef.current
+    if (!map) return
+    const c = campusRef.current ?? await loadCampus(g?.campus?.id ?? "nist")
+    if (!c) {                            // campus data unavailable: behave like a normal place
+      if (g) flyToPlace({ ...g, campus: undefined })
+      else toast.warning("The campus map could not be loaded - check the connection")
+      return
+    }
+    if (!campusRef.current) { campusRef.current = c; setCampus(c) }
+    const b = g?.campus?.building ? c.buildings.find((x) => x.id === g.campus?.building) : undefined
+    if (!b) {
+      placePin.current?.remove()
+      placePin.current = null
+      fitClear(L.latLngBounds(c.bounds), c.zoom)
+      holdHint(<><b>{c.name}</b> — tap any building to see it and check its roof</>)
+      return
+    }
+    const head = g?.name.split(", ")[0] ?? ""
+    pickBuilding(b, { fly: true, section: head !== b.name && b.sections?.includes(head) ? head : null })
+  }
+
+  function flyToPlace(g: GeoResult) {
+    if (g.campus) return void goCampus(g)
+    const name = g.name.split(", ").slice(0, 2).join(", ")
+    mapRef.current?.flyTo([g.lat, g.lon], zoomFor(g.type), { duration: 1.2 })
+    dropPlacePin(g.lat, g.lon, name)
+    holdHint(g.discom
+      ? <>Now at <b>{name}</b> — zoom to your house in {g.district} ({g.discom}) and <b>tap its roof</b> 👆</>
+      : <>Now at <b>{name}</b> — zoom to your house and <b>tap its roof</b> 👆</>)
+  }
+
+  /** category search ("hotels in Berhampur"): pin every hit and frame them all (null clears) */
+  function showResultPins(rows: GeoResult[] | null, label = "") {
+    const map = mapRef.current
+    if (!map) return
+    resultPins.current?.clearLayers()
+    if (!rows?.length) return
+    const group = resultPins.current ?? (resultPins.current = L.layerGroup().addTo(map))
+    rows.forEach((r) => {
+      L.marker([r.lat, r.lon], { icon: divIcon("sj-result-pin"), keyboard: false, riseOnHover: true })
+        .bindTooltip(r.name.split(", ")[0], { direction: "top", className: "sj-place-label", offset: [0, -9] })
+        .on("click", () => flyToPlace(r))
+        .addTo(group)
+    })
+    placePin.current?.remove()
+    placePin.current = null
+    fitClear(L.latLngBounds(rows.map((r) => [r.lat, r.lon] as LatLng)).pad(0.1), 16)
+    holdHint(<><b>{rows.length} {label}</b> — tap a pin to go there</>, 8000)
   }
 
   // ------------------------------------------------------------ manual drawing
@@ -434,11 +719,16 @@ export function MapPanel({ visible }: { visible: boolean }) {
 
   const draw = S.mode === "draw"
   const canUndo = (draw && S.drawPts.length > 0) || (!draw && S.aiPoints.length > 1)
-  const showRefine = !!roof && roof.method !== "manual" && !draw && !more
+  const showRefine = !!roof && roof.method !== "manual" && roof.method !== "mapped" && !draw && !more
   const area = liveArea ?? (roof ? areaM2(roof.latlngs) : 0)
   const r = ctx.result
   const ready = !!r && !ctx.assessing
   const waterPct = r ? Math.round(r.rain.coverage * 100) : 0
+  // the campus building behind a "mapped" roof (outline starts at the building's first corner)
+  const pickedB = roof?.method === "mapped" && campus
+    ? campus.buildings.find((b) => Math.abs(b.poly[0][0] - roof.latlngs[0][0]) < 2e-5 && Math.abs(b.poly[0][1] - roof.latlngs[0][1]) < 2e-5) ?? null
+    : null
+  const legendKinds = campus ? [...new Set(campus.buildings.map((b) => b.kind))] : []
 
   return (
     <div ref={wrapRef} className="sj-map relative h-full w-full overflow-hidden bg-sage-950">
@@ -456,24 +746,21 @@ export function MapPanel({ visible }: { visible: boolean }) {
 
       {/* search + hint */}
       <div ref={topRef} className="absolute inset-x-3 top-3 z-[500] flex flex-col items-start gap-2 sm:left-4 sm:right-auto sm:w-[min(400px,calc(100%-2rem))]">
-        <SearchBox onPick={(g) => {
-            const name = g.name.split(", ").slice(0, 2).join(", ")
-            mapRef.current?.flyTo([g.lat, g.lon], zoomFor(g.type), { duration: 1.2 })
-            dropPlacePin(g.lat, g.lon, name)
-            setHint(g.discom
-              ? <>Now at <b>{name}</b> — zoom to your house in {g.district} ({g.discom}) and <b>tap its roof</b> 👆</>
-              : <>Now at <b>{name}</b> — zoom to your house and <b>tap its roof</b> 👆</>)
-          }}
+        <SearchBox onPick={flyToPlace} onShowAll={showResultPins}
           onLatLon={(lat, lon) => {
             mapRef.current?.flyTo([lat, lon], 19, { duration: 1.2 })
             dropPlacePin(lat, lon, "Your spot")
-            setHint(<>Zoom to your house and <b>tap its roof</b> 👆</>)
+            holdHint(<>Zoom to your house and <b>tap its roof</b> 👆</>)
           }}
           getBias={() => { const c = mapRef.current?.getCenter(); return c ? { lat: c.lat, lon: c.lng } : null }} />
         <div className="no-scrollbar flex max-w-full items-center gap-1.5 overflow-x-auto pb-0.5">
+          <button type="button" onClick={() => void goCampus()} title="Open the NIST University campus map"
+            className="inline-flex shrink-0 items-center gap-1 rounded-full bg-amber-300 px-2.5 py-1 text-[11px] font-bold text-sage-950 shadow hover:bg-amber-200">
+            <GraduationCap className="size-3.5" /> NIST University
+          </button>
           {ODISHA_CITIES.map((c) => (
             <button key={c.name} type="button"
-              onClick={() => { mapRef.current?.flyTo([c.lat, c.lon], c.zoom, { duration: 1.1 }); dropPlacePin(c.lat, c.lon, c.name); setHint(<>Now at <b>{c.name}</b> — zoom to your house and <b>tap its roof</b> 👆</>) }}
+              onClick={() => { mapRef.current?.flyTo([c.lat, c.lon], c.zoom, { duration: 1.1 }); dropPlacePin(c.lat, c.lon, c.name); holdHint(<>Now at <b>{c.name}</b> — zoom to your house and <b>tap its roof</b> 👆</>) }}
               className="shrink-0 rounded-full bg-white/90 px-2.5 py-1 text-[11px] font-semibold text-sage-800 shadow backdrop-blur hover:bg-white">
               {c.name}
             </button>
@@ -487,6 +774,25 @@ export function MapPanel({ visible }: { visible: boolean }) {
           <span className="truncate [&_b]:font-semibold [&_b]:text-amber-200">{hint.html}</span>
         </div>
       </div>
+
+      {/* campus legend (desktop - on phones the labels and the roof card say it all) */}
+      {campus && campusOn && (
+        <div className="pointer-events-none absolute top-3 right-3 z-[450] hidden w-56 rounded-xl bg-sage-950/80 p-2.5 text-[11px] text-white shadow-lg backdrop-blur md:block">
+          <div className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold">
+            <GraduationCap className="size-3.5 text-amber-300" /> {campus.name} map
+          </div>
+          <div className="grid grid-cols-2 gap-x-3 gap-y-1">
+            {legendKinds.map((k) => (
+              <span key={k} className="flex items-center gap-1.5">
+                <i className="size-2.5 shrink-0 rounded-[3px]" style={{ background: KIND_STYLE[k].color }} />{KIND_STYLE[k].label}
+              </span>
+            ))}
+          </div>
+          <p className="mt-1.5 text-[10px] leading-snug text-white/65">
+            Traced on the {campus.imagery.replace(/^Esri World Imagery - /, "")} image. B1–B7: names not confirmed yet.
+          </p>
+        </div>
+      )}
 
       {/* bottom stack: refine chips, toolbar, roof summary */}
       <div ref={stackRef} className="pointer-events-none absolute inset-x-0 bottom-[calc(0.75rem+env(safe-area-inset-bottom))] z-[500] flex flex-col items-center gap-2 px-3 lg:bottom-6 [&>*]:pointer-events-auto">
@@ -520,11 +826,13 @@ export function MapPanel({ visible }: { visible: boolean }) {
               className="w-full max-w-md rounded-2xl border bg-card p-3.5 shadow-2xl">
               <div className="flex items-center gap-3">
                 <div className="min-w-0 flex-1">
-                  <div className="text-[11px] font-semibold tracking-wider text-muted-foreground uppercase">Your roof</div>
+                  <div className="truncate text-[11px] font-semibold tracking-wider text-muted-foreground uppercase">
+                    {pickedB ? `${campus?.name ?? "Campus"} · ${pickedB.search ? KIND_STYLE[pickedB.kind].label : "Name not confirmed"}` : "Your roof"}
+                  </div>
                   <div className="font-heading text-2xl leading-tight font-medium tabular">
                     {fmtIN(area)} <span className="text-sm text-muted-foreground">m² · <span className="whitespace-nowrap">{fmtIN(sqft(area))} sq ft</span></span>
                   </div>
-                  {ctx.address && (
+                  {!pickedB && ctx.address && (
                     <div className="mt-0.5 flex min-w-0 items-center gap-1 text-xs text-muted-foreground">
                       <MapPin className="size-3 shrink-0" /><span className="truncate">{ctx.address}</span>
                     </div>
@@ -536,6 +844,8 @@ export function MapPanel({ visible }: { visible: boolean }) {
                   <ChevronDown className={cn("size-4 transition-transform duration-200", more && "rotate-180")} />
                 </button>
               </div>
+
+              {pickedB && <BuildingFacts b={pickedB} focus={focus} />}
 
               <AnimatePresence initial={false}>
                 {more && (
@@ -629,25 +939,69 @@ function Chip({ children, on, onClick, tone }: { children: ReactNode; on?: boole
   )
 }
 
-function SearchBox({ onPick, onLatLon, getBias }: {
+/** name, size and the sections inside a campus building - shown on the roof card */
+function BuildingFacts({ b, focus }: { b: CampusBuilding; focus: string | null }) {
+  return (
+    <div className="mt-2.5 border-t pt-2.5">
+      <div className="flex min-w-0 items-center gap-1.5 text-[13px] font-semibold">
+        <span className="size-2.5 shrink-0 rounded-[3px]" style={{ background: KIND_STYLE[b.kind].color }} />
+        <span className="truncate">{b.name}</span>
+        {b.floors ? <span className="shrink-0 font-normal text-muted-foreground">· {b.floors} floors</span> : null}
+      </div>
+      {b.sections?.length ? (
+        <div className="mt-1.5 flex flex-wrap gap-1" aria-label="Sections in this building">
+          {b.sections.map((x) => (
+            <span key={x} className={cn("rounded-full border px-2 py-0.5 text-[11px] font-medium",
+              x === focus ? "border-primary bg-primary text-primary-foreground" : "bg-secondary/70 text-foreground")}>
+              {x}
+            </span>
+          ))}
+        </div>
+      ) : b.about ? <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{b.about}</p> : null}
+    </div>
+  )
+}
+
+const CAT_ICON: Record<string, typeof MapPin> = {
+  hotel: BedDouble, food: UtensilsCrossed, college: GraduationCap, campus: Building, health: Stethoscope,
+  shop: ShoppingBag, temple: Landmark, landmark: Landmark, gov: Landmark, transport: BusFront, fuel: Fuel,
+}
+
+function SearchBox({ onPick, onLatLon, getBias, onShowAll }: {
   onPick: (g: GeoResult) => void
   onLatLon: (lat: number, lon: number) => void
   /** current map centre, used to rank nearby places first (like Google Maps) */
   getBias?: () => { lat: number; lon: number } | null
+  /** a category search ("hotels in Berhampur"): pin every result on the map; null clears the pins */
+  onShowAll?: (rows: GeoResult[] | null, label?: string) => void
 }) {
   const [q, setQ] = useState("")
   const [results, setResults] = useState<GeoResult[]>([])
+  const [cat, setCat] = useState<SearchOutcome["category"] | null>(null)
+  const [resultsFor, setResultsFor] = useState("")      // the text the rows answer
+  const [pinned, setPinned] = useState(false)
+  const [open, setOpen] = useState(false)               // the list is showing (focus brings it back)
   const [busy, setBusy] = useState(false)
   const [hi, setHi] = useState(-1)
   const boxRef = useRef<HTMLFormElement>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     const close = (e: MouseEvent) => {
-      if (!boxRef.current?.contains(e.target as Node)) { setResults([]); setHi(-1) }
+      if (!boxRef.current?.contains(e.target as Node)) { setOpen(false); setHi(-1) }
     }
     document.addEventListener("click", close)
     return () => document.removeEventListener("click", close)
   }, [])
+
+  const show = (out: SearchOutcome, text: string, reveal = document.activeElement === inputRef.current) => {
+    setResults(out.rows)
+    setCat(out.category ?? null)
+    setResultsFor(text)
+    setPinned(false)
+    if (reveal) setOpen(true)               // late answers don't pop up once the user has moved on
+    setHi(-1)
+  }
 
   // live suggestions while typing (like Google Maps); stale answers are dropped
   useEffect(() => {
@@ -657,8 +1011,11 @@ function SearchBox({ onPick, onLatLon, getBias }: {
     const t = setTimeout(async () => {
       setBusy(true)
       try {
-        const rows = await searchPlaces(text, { signal: ctl.signal, bias: getBias?.() ?? undefined })
-        if (!ctl.signal.aborted) { setResults(rows); setHi(-1) }
+        const out = await searchPlaces(text, { signal: ctl.signal, bias: getBias?.() ?? undefined })
+        if (!ctl.signal.aborted) {
+          show(out, text)
+          onShowAll?.(null)                  // a new search: earlier result pins go
+        }
       } catch {
         if (!ctl.signal.aborted) setResults([])
       } finally {
@@ -671,26 +1028,39 @@ function SearchBox({ onPick, onLatLon, getBias }: {
 
   const setQuery = (v: string) => {
     setQ(v)
-    if (v.trim().length < 2) { setResults([]); setHi(-1) }
+    setOpen(true)
+    if (v.trim().length < 2) { setResults([]); setCat(null); setHi(-1) }
   }
 
-  const pick = (g: GeoResult) => { setQ(""); setResults([]); setHi(-1); onPick(g) }
+  const pick = (g: GeoResult) => { setQ(""); setResults([]); setCat(null); setOpen(false); setHi(-1); onPick(g) }
+
+  // every hit pinned on the map: fold the list away so the pins are visible (focus brings it back)
+  const showAll = (rows: GeoResult[], c: NonNullable<SearchOutcome["category"]>) => {
+    onShowAll?.(rows, `${c.label.toLowerCase()}${c.near ? ` near ${c.near}` : ""}`)
+    setPinned(true)
+    setOpen(false)
+    setHi(-1)
+    ;(document.activeElement as HTMLElement | null)?.blur?.()     // phones: drop the keyboard too
+  }
 
   async function submit(e: FormEvent) {
     e.preventDefault()
     const text = q.trim()
     if (!text) return
     const m = text.match(/^\s*(-?\d{1,2}(?:\.\d+)?)\s*[,\s]\s*(-?\d{1,3}(?:\.\d+)?)\s*$/)
-    if (m) { setResults([]); setHi(-1); onLatLon(+m[1], +m[2]); return }
+    if (m) { setResults([]); setOpen(false); setHi(-1); onLatLon(+m[1], +m[2]); return }
     if (hi >= 0 && results[hi]) return void pick(results[hi])
-    if (results.length) return void pick(results[0])
-    // nothing yet (paste + instant Enter): run the deep search now
+    const fresh = results.length > 0 && resultsFor === text
+    if (fresh && cat) return showAll(results, cat)                    // "hotels in Berhampur" -> all on the map
+    if (fresh && matchesQuery(results[0], text)) return void pick(results[0])
+    // not answered yet (or only loosely): the deep search adds the server's full geocoder
     setBusy(true)
     try {
-      const rows = await searchPlaces(text, { deep: true, bias: getBias?.() ?? undefined })
-      if (!rows.length) toast.warning("No place found — try a nearby landmark, area or PIN code")
-      else if (rows.length === 1) pick(rows[0])
-      else { setResults(rows); setHi(-1) }
+      const out = await searchPlaces(text, { deep: true, bias: getBias?.() ?? undefined })
+      if (!out.rows.length) return void toast.warning("No place found — try a nearby landmark, area or PIN code")
+      show(out, text, true)
+      if (out.category) showAll(out.rows, out.category)
+      else if (out.rows.length === 1 || matchesQuery(out.rows[0], text)) pick(out.rows[0])
     } catch (err) {
       toast.error((err as Error).message)
     } finally {
@@ -702,18 +1072,19 @@ function SearchBox({ onPick, onLatLon, getBias }: {
     <form ref={boxRef} onSubmit={submit} className="relative z-10 w-full" role="search" autoComplete="off">
       <div className="flex h-12 items-center gap-2 rounded-2xl border bg-card/95 pr-1.5 pl-3.5 shadow-lg backdrop-blur focus-within:ring-3 focus-within:ring-ring/40">
         <Search className="size-[18px] shrink-0 text-muted-foreground" />
-        <input value={q} onChange={(e) => setQuery(e.target.value)}
+        <input ref={inputRef} value={q} onChange={(e) => setQuery(e.target.value)} onFocus={() => { if (results.length) setOpen(true) }}
           onKeyDown={(e) => {
-            if (e.key === "ArrowDown") { e.preventDefault(); setHi((h) => Math.min(h + 1, results.length - 1)) }
+            if (e.key === "ArrowDown") { e.preventDefault(); setOpen(true); setHi((h) => Math.min(h + 1, results.length - 1)) }
             else if (e.key === "ArrowUp") { e.preventDefault(); setHi((h) => Math.max(h - 1, -1)) }
-            else if (e.key === "Escape") { setResults([]); setHi(-1) }
+            else if (e.key === "Escape") { setOpen(false); setHi(-1) }
           }}
-          placeholder="Search a place, landmark or PIN code in Odisha…"
-          aria-label="Search a place" role="combobox" aria-expanded={results.length > 0}
+          placeholder="Search a place, hotel, NIST building or PIN…"
+          aria-label="Search a place" role="combobox" aria-expanded={open && results.length > 0}
           aria-controls="sj-place-list" aria-autocomplete="list"
           className="h-full min-w-0 flex-1 bg-transparent text-[15px] outline-none placeholder:text-muted-foreground" />
         {q && (
-          <button type="button" onClick={() => { setQ(""); setResults([]); setHi(-1) }} className="grid size-8 place-items-center rounded-lg text-muted-foreground hover:bg-secondary" aria-label="Clear search">
+          <button type="button" onClick={() => { setQ(""); setResults([]); setCat(null); setOpen(false); setHi(-1); onShowAll?.(null) }}
+            className="grid size-8 place-items-center rounded-lg text-muted-foreground hover:bg-secondary" aria-label="Clear search">
             <X className="size-4" />
           </button>
         )}
@@ -722,14 +1093,36 @@ function SearchBox({ onPick, onLatLon, getBias }: {
         </button>
       </div>
       <AnimatePresence>
-        {(results.length > 0 || (busy && q.trim().length >= 2)) && (
+        {open && (results.length > 0 || (busy && q.trim().length >= 2)) && (
           <motion.ul id="sj-place-list" role="listbox" initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }}
-            className="absolute inset-x-0 top-[3.4rem] max-h-80 overflow-auto rounded-2xl border bg-card p-1.5 shadow-2xl">
+            className="absolute inset-x-0 top-[3.4rem] max-h-[min(22rem,55dvh)] overflow-auto rounded-2xl border bg-card p-1.5 shadow-2xl">
+            {cat && results.length > 0 && (
+              <li role="presentation" className="flex items-center gap-2 px-2.5 pt-1 pb-1.5">
+                <span className="min-w-0 truncate text-[11px] font-semibold tracking-wider text-muted-foreground uppercase">
+                  {results.length} {cat.label}{cat.near ? ` near ${cat.near}` : " near the map"}
+                </span>
+                {pinned ? (
+                  <span className="ml-auto inline-flex shrink-0 items-center gap-1 text-[11px] font-semibold text-emerald-700">
+                    <Check className="size-3.5" /> On the map
+                  </span>
+                ) : (
+                  <button type="button" onClick={() => showAll(results, cat)}
+                    className="ml-auto shrink-0 rounded-full bg-primary px-2.5 py-1 text-[11px] font-semibold text-primary-foreground hover:bg-primary/90">
+                    Show all on map
+                  </button>
+                )}
+              </li>
+            )}
             {results.map((r, i) => {
               const [head, ...rest] = r.name.split(", ")
-              const sub = r.district
-                ? `${r.kind ?? "Place"} · ${r.district} district`
-                : `${r.kind ?? "Place"}${rest.length ? " · " : ""}${rest.slice(0, 3).join(", ")}`
+              const Icon = CAT_ICON[r.cat ?? ""] ?? MapPin
+              const sub = r.campus?.building
+                ? `${r.address?.startsWith("In the ") ? r.address : r.kind ?? "Campus building"} · NIST University`
+                : r.address
+                  ? `${r.kind ?? "Place"} · ${r.address}`
+                  : r.district
+                    ? `${r.kind ?? "Place"} · ${r.district} district`
+                    : `${r.kind ?? "Place"}${rest.length ? " · " : ""}${rest.slice(0, 3).join(", ")}`
               return (
                 <li key={`${r.lat},${r.lon},${i}`} role="option" aria-selected={i === hi}>
                   <button type="button" onClick={() => pick(r)} onMouseEnter={() => setHi(i)}
@@ -737,8 +1130,9 @@ function SearchBox({ onPick, onLatLon, getBias }: {
                       "flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-left transition-colors",
                       i === hi ? "bg-secondary" : "hover:bg-secondary/60",
                     )}>
-                    <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-secondary text-muted-foreground">
-                      <MapPin className="size-4" />
+                    <span className={cn("grid size-8 shrink-0 place-items-center rounded-lg",
+                      r.campus ? "bg-amber-100 text-amber-800" : "bg-secondary text-muted-foreground")}>
+                      <Icon className="size-4" />
                     </span>
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-sm font-semibold">{head}</span>

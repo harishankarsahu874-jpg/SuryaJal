@@ -6,7 +6,8 @@ import { toast } from "sonner"
 import { api, type AppConfig, type Assessment } from "@/lib/api"
 import { centroid, decodePolyline, DEMO_ROOF, DEMO_ROOFS, encodePolyline, type LatLng } from "@/lib/geo"
 
-export type RoofMethod = "ai" | "ai-edited" | "manual"
+/** "mapped" = a building outline from a campus map (traced on the same imagery) */
+export type RoofMethod = "ai" | "ai-edited" | "manual" | "mapped"
 export type Tab = "map" | "solar" | "rain" | "report"
 
 /** the result views - reached via "Show More" on the map's roof card */
@@ -59,6 +60,8 @@ export interface MapApi {
 interface SetRoofOpts {
   fit?: boolean
   keepPanels?: boolean
+  /** a known name for this roof (a campus building) - used instead of the reverse-geocoded one */
+  address?: string
 }
 
 interface DashboardCtx {
@@ -118,7 +121,7 @@ export function buildQuery(roof: Roof, i: Inputs, config: AppConfig | null, addr
   if (i.rain_override_mm !== null) q.set("rn", String(i.rain_override_mm))
   if (i.panels !== null) q.set("n", String(i.panels))
   if (address.trim()) q.set("a", address.trim().slice(0, 120))
-  q.set("m", roof.method.startsWith("ai") ? "ai" : "manual")
+  q.set("m", roof.method.startsWith("ai") ? "ai" : roof.method === "mapped" ? "mapped" : "manual")
   if (roof.method === "ai" && roof.conf != null) q.set("cf", Math.min(1, roof.conf).toFixed(2))
   return q.toString()
 }
@@ -135,6 +138,8 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
   const mapApi = useRef<MapApi | null>(null)
   const seq = useRef(0)
   const lastRev = useRef("")
+  // the address came with the roof (a campus building's name): a different roof drops it again
+  const namedRoof = useRef(false)
 
   const setTab = useCallback((t: Tab) => {
     setTabState(t)
@@ -142,6 +147,16 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const setRoof = useCallback((latlngs: LatLng[], method: RoofMethod, conf: number | null = null, opts: SetRoofOpts = {}) => {
+    if (opts.address !== undefined) {
+      namedRoof.current = true
+      addressAuto.current = false
+      setAddressState(opts.address)
+    } else if (namedRoof.current && !opts.keepPanels) {       // a new roof elsewhere (edits keep the name)
+      namedRoof.current = false
+      addressAuto.current = true
+      lastRev.current = ""
+      setAddressState("")
+    }
     setRoofState((prev) => ({
       latlngs: latlngs.map((p) => [p[0], p[1]] as LatLng),
       method,
@@ -157,6 +172,7 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
     setResult(null)
     setAssessing(false)
     addressAuto.current = true
+    namedRoof.current = false
     lastRev.current = ""
     setAddressState("")
     setInputs((i) => ({ ...i, panels: null }))
@@ -164,12 +180,14 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const setAddress = useCallback((v: string) => {
+    namedRoof.current = false
     addressAuto.current = false
     setAddressState(v)
   }, [])
 
   const loadDemo = useCallback((id?: string) => {
     const d = DEMO_ROOFS.find((r) => r.id === id) ?? DEMO_ROOF
+    namedRoof.current = false
     addressAuto.current = false
     setAddressState(d.name)
     setRoof(d.poly, "ai", 1.0, { fit: true })
@@ -234,7 +252,8 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
             addressAuto.current = false
             setAddressState(q.get("a")!)
           }
-          setRoof(poly, q.get("m") === "ai" ? "ai" : "manual", num("cf"), { fit: true, keepPanels: true })
+          const m = q.get("m")
+          setRoof(poly, m === "ai" ? "ai" : m === "mapped" ? "mapped" : "manual", num("cf"), { fit: true, keepPanels: true })
           // links open on the map with the roof outlined - "Show More" on the roof card leads on to the
           // results. v= (written by the address bar below) reopens the result view a refresh came from.
           const v = q.get("v")

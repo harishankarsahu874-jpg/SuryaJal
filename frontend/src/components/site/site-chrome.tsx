@@ -71,8 +71,8 @@ export function SiteFooter({ onReplayIntro }: { onReplayIntro?: () => void }) {
           <h2 className="text-sm font-semibold text-foreground">Data &amp; credits</h2>
           <ul className="mt-3 grid gap-2.5 text-sm leading-relaxed text-muted-foreground">
             <li>Climate: NASA POWER</li>
-            <li>Imagery © Esri, Maxar, Earthstar Geographics</li>
-            <li>Search © OpenStreetMap contributors</li>
+            <li>Imagery © Esri, Vantor, Earthstar Geographics</li>
+            <li>Search © Esri, OpenStreetMap contributors</li>
             <li>Photos: Unsplash (Unsplash License)</li>
           </ul>
         </div>

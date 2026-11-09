@@ -47,7 +47,7 @@ USER_AGENT = "SuryaJal-odisha/2.0 (student renewable-energy project; contact via
 # ---------------------------------------------------------------- external data
 ESRI_TILE_URL = ("https://server.arcgisonline.com/ArcGIS/rest/services/"
                  "World_Imagery/MapServer/tile/{z}/{y}/{x}")
-ESRI_ATTRIBUTION = "Imagery © Esri, Maxar, Earthstar Geographics & GIS User Community"
+ESRI_ATTRIBUTION = "Imagery © Esri, Vantor, Earthstar Geographics & GIS User Community"
 NASA_POWER_URL = "https://power.larc.nasa.gov/api/temporal/climatology/point"
 NOMINATIM_URL = "https://nominatim.openstreetmap.org/search"
 # bias place search to Odisha (Nominatim viewbox = lon_min,lat_min,lon_max,lat_max)

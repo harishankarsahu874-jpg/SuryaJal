@@ -1,19 +1,0 @@
-overture building ...
-Downloading: 0 rows [00:00, ? rows/s]Downloading: 770 rows [00:00, 2327.52 rows/s]Downloading: 770 rows [00:00, 2314.48 rows/s]
-State saved to /home/runner/work/SuryaJal/SuryaJal/scripts/campus_raw/buildings.geojson.state
-  770 building features in 1s
-overture place ...
-Downloading: 0 rows [00:00, ? rows/s]Downloading: 10 rows [00:00, 46.37 rows/s]Downloading: 10 rows [00:00, 45.76 rows/s]
-State saved to /home/runner/work/SuryaJal/SuryaJal/scripts/campus_raw/places.geojson.state
-  10 place features in 1s
-overture land_use ...
-Downloading: 0 rows [00:00, ? rows/s]Downloading: 1 rows [00:00,  4.52 rows/s]Downloading: 1 rows [00:00,  1.22 rows/s]
-State saved to /home/runner/work/SuryaJal/SuryaJal/scripts/campus_raw/land_use.geojson.state
-  1 land_use features in 1s
-osm: https://overpass-api.de/api/interpreter failed: 502 Server Error: Bad Gateway for url: https://overpass-api.de/api/interpreter
-osm: https://overpass.kumi.systems/api/interpreter failed: 504 Server Error: Gateway Timeout for url: https://overpass.kumi.systems/api/interpreter
-osm: https://maps.mail.ru/osm/tools/overpass/api/interpreter failed: 504 Server Error: Gateway Timeout for url: https://maps.mail.ru/osm/tools/overpass/api/interpreter
-tiles z16: 4x3, 0 placeholder(s)
-tiles z17: 7x5, 0 placeholder(s)
-tiles z18: 13x10, 0 placeholder(s)
-z19 probe sizes: [2521, 2521, 2521, 2521, 2521]
