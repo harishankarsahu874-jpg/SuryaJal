@@ -1,0 +1,1303 @@
+
+
+<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN" "https://www.w3.org/TR/html4/loose.dtd">
+<html>
+<head>
+   <link rel="icon" href="/web/images/favicon.png?v=2" type="image/png" sizes="192x192">
+
+<title>     NIST Bus Stand     </title>
+<meta name="description" content="  NIST Bus Stand ">
+
+
+
+ 
+<meta name="keywords" content=" NIST Bus Stand " > 
+
+
+<link rel="stylesheet" href="/web/css/style.css" type="text/css" >
+<link rel="stylesheet" href="/web/css/stylenew.css" type="text/css" >
+
+
+
+
+
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
+
+</head>
+<script>
+    function  jqueryOnready(){
+    loadReviews()  
+  }
+    
+    
+</script>
+ 
+ 
+ 
+
+
+ 
+
+
+<script>
+window.dataLayer = window.dataLayer || [];
+function gtag(){dataLayer.push(arguments);}
+gtag('consent', 'default', {
+  'ad_storage': 'denied',
+  'ad_user_data': 'denied',
+  'ad_personalization': 'denied',
+  'analytics_storage': 'denied',
+  'region': ['AT','BE','BG','HR','CY','CZ','DK','EE','FI','FR','DE','GR','HU','IS','IE','IT','LV','LI','LT','LU','MT','NL','NO','PL','PT','RO','SK','SI','ES','SE','GB','CH'],
+  'wait_for_update': 500
+});
+gtag('consent', 'default', {
+  'ad_storage': 'granted',
+  'ad_user_data': 'granted',
+  'ad_personalization': 'granted',
+  'analytics_storage': 'granted'
+});
+</script>
+<script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-5256507338893597" crossorigin="anonymous"></script>
+
+
+
+
+
+ 
+
+
+
+
+
+
+
+
+
+
+
+
+
+<script type="text/javascript">
+function login(url){
+
+	document.location="/loginRegister.dont?method=loadBigLogin";
+
+}
+function refershLoginDetails( log){
+
+document.getElementById("logindivId").innerHTML=log;
+}
+</script>
+
+
+<script type="text/javascript">
+
+
+
+
+
+function onpageload(){
+  //  alert("onpageload")
+//alert("device-widthe"  + $(window).width())
+
+// fix for non microsoft as it improves other Browser performance
+
+// afterpageloadImpl  only for IE as aother browser do not need after page loaf impl they intelligently load ddiv by div ajax by ajax they wont
+// make to user wait till all ajax(javscript) completed
+var ua= navigator.userAgent.toLowerCase();
+
+if ( ua.indexOf( "msie" ) != -1 ) {
+}else{
+startAfterPageLoad();
+}
+
+
+try{
+    relNoFollow()
+ }catch(e){
+}
+
+try{
+geoInitialize(); // locationGeoMap.jsp,previewMapHistory.jsp
+}
+catch(e){
+}
+
+
+		try{
+onpageloadGeneric(); //any where all
+}
+catch(e){
+}
+
+
+
+	try{
+onLoadArtic(); //articEnglishReEditor.jsp;
+}
+catch(e){
+}
+
+	try{
+onLoadrenderArtic(); //articCommentList.jsp;articDisplay.jsp
+}
+catch(e){
+}
+
+	try{
+onLoadArticLangReEditor() //articLangReEditor.jsp
+}
+catch(e){
+}
+
+
+
+	try{
+refreshSpam()  //articEnglishEditor.jsp,articEnglishReEditor.jsp,articLangEditor.jsp,articLangReEditor.jsp,
+}
+catch(e){
+}
+
+
+
+
+
+	}
+
+
+
+function onpageunload() {
+
+try{
+GUnload()
+}
+catch(e){
+}
+
+}
+
+
+ window.onload=onpageload
+ window.onunload=onpageunload
+
+
+</script>
+
+
+
+
+
+<script type="text/javascript">
+
+
+
+function afterpageloadImpl(){
+
+document.onkeydown=""
+document.onmousedown=""
+document.onmousewheel=""
+
+
+
+
+
+	try{
+geoInitializeAfter(); // moved from afterpageloadImpl  to this section  locationGeoMap.jsp,previewMapHistory.jsp
+}
+catch(e){
+}
+
+
+
+		try{
+onLoadrenderComment() //articComments.jsp
+}
+catch(e){
+}
+
+
+
+
+
+		try{
+onLoadvillageFirstInfo() //articComments.jsp
+}
+catch(e){
+}
+
+
+
+		try{
+onLoadChat() //chatManger.jsp
+}
+catch(e){
+}
+
+
+		try{
+onLoadSchoolAfter() //chatManger.jsp
+}
+catch(e){
+}
+
+
+
+		try{
+onpageloadGenericAfter() //ALL
+}
+catch(e){
+}
+
+	}
+
+
+
+
+var afterPageLoadStarted = false;
+var afterPageLoadQueued = false;
+var afterPageLoadDomWait = false;
+function clearAfterPageLoadHooks() {
+document.onkeydown = null;
+document.onmousedown = null;
+document.onmousewheel = null;
+if ("onpointerdown" in document) {
+document.onpointerdown = null;
+}
+}
+function startAfterPageLoad() {
+if (afterPageLoadStarted) {
+return;
+}
+if (document.readyState === "loading") {
+if (!afterPageLoadDomWait) {
+afterPageLoadDomWait = true;
+document.addEventListener("DOMContentLoaded", startAfterPageLoad);
+}
+return;
+}
+afterPageLoadStarted = true;
+clearAfterPageLoadHooks();
+afterpageloadImpl();
+}
+function scheduleAfterPageLoad() {
+if (afterPageLoadStarted || afterPageLoadQueued) {
+return;
+}
+afterPageLoadQueued = true;
+clearAfterPageLoadHooks();
+if (window.requestAnimationFrame) {
+requestAnimationFrame(function () {
+setTimeout(startAfterPageLoad, 0);
+});
+} else {
+setTimeout(startAfterPageLoad, 0);
+}
+}
+document.onkeydown = scheduleAfterPageLoad;
+document.onmousedown = scheduleAfterPageLoad;
+document.onmousewheel = scheduleAfterPageLoad;
+if ("onpointerdown" in document) {
+document.onpointerdown = scheduleAfterPageLoad;
+}
+if (window.requestIdleCallback) {
+requestIdleCallback(function () {
+startAfterPageLoad();
+}, { timeout: 2500 });
+} else {
+window.addEventListener("load", function () {
+setTimeout(startAfterPageLoad, 1500);
+});
+}
+
+</script>
+
+
+
+
+<body>
+
+
+<div class="mainwrapper" > <!--div1-->
+
+
+
+<div class="log_reg_warn">
+
+
+		<span style="color: 'green'">
+
+		  
+
+    	
+
+		 </span>
+
+
+
+</div>
+
+
+
+
+
+    <div class="headerwidth">
+
+    <div>
+
+      &nbsp;&nbsp;&nbsp;&nbsp; <img src="/web/images/logo.png" alt="Explore India onefivenine">
+
+
+
+  
+<form action="/CSE.do" id="cse-search-box">
+    <input type="hidden" name="cx" value="partner-pub-5256507338893597:w4ozuq5whzn" />
+    <input type="hidden" name="cof" value="FORID:10" />
+    <input type="hidden" name="ie" value="ISO-8859-1" />
+    <input type="text" name="q" size="31" />
+    <input type="submit" name="sa" value="Search" />
+</form>
+
+<script async type="text/javascript" src="//www.google.com/cse/brand?form=cse-search-box&amp;lang=en"></script>
+
+  </div>
+
+
+
+     <div class="log_reg" id="logindivId">
+
+
+   
+
+
+     
+    	<a href="javascript:login();" > Login | Register</a>
+   
+		 
+   </div>
+
+
+
+
+
+
+     </div>
+
+
+    <div class="headerwidth">
+
+
+         <table class="menu" align="center">
+    <tr>
+
+    <td >
+    &nbsp;
+    </td>
+    <td class="menu_item" onclick="window.location.href = '/'">
+    <a href="/">Home </a>
+    </td>
+    <td class="menu_item" onclick="window.location.href = '/india/BusRouteStage/'">
+    <a href="/india/BusRouteStage/">City Bus  </a> </td>
+    <td class="menu_item"  onclick="window.location.href = '/india/head/map'">
+    <a href="/india/head/map">Maps</a> </td>  <!-- /india/head/onefiveninedirections -->
+    <td class="menu_item" onclick="window.location.href = '/india/head/findVillage'">
+    <a href="/india/head/findVillage">Villages </a> </td>
+    <td class="menu_item" onclick="window.location.href = '/india/head/Cities'">
+    <a href="/india/head/Cities">Cities </a>
+     </td>
+
+    <td class="menu_item" onclick="window.location.href = '/rail.dont?method=loadRailSearchHome'">
+          <a  class="bodytextGreenSmall"  href="/rail.dont?method=loadRailSearchHome">
+           Rail </a>
+        </td>
+
+   <td class="menu_item" onclick="window.location.href = '/india/Travel'">
+          <a  class="bodytextGreenSmall"  href="/india/Travel">Tourist Places </a>
+
+        </td>
+
+
+
+    <td class="menu_item" onclick="window.location.href = '/india/head/School'">
+    <a href="/india/head/School">School </a>
+    </td>
+    <td class="menu_item" onclick="window.location.href = '/india/head/College'">
+    <a href="/india/head/College"> College </a>
+    </td>
+    <td class="menu_item" onclick="window.location.href = '/india/head/pincodes'">
+    <a href="/india/head/pincodes">Pin Codes </a>
+     </td>
+        <td class="menu_item" onclick="window.location.href = '/india/india/surname/search'">
+    <a href="/india/india/surname/search">Surnames </a>
+     </td>
+    <!--
+    <td class="menu_item" onclick="clickLinkEdit('/loginRegister.dont?method=listUserProfileAll')">
+    <a href="javaScript:clickLinkEdit('/loginRegister.dont?method=listUserProfileAll')">People </a>
+     </td>
+    -->
+    <!--
+    <td class="menu_item"><a href="/india/head/Suggestion" > Contact </a>
+     </td>
+      -->
+    </tr>
+    </table>
+
+
+
+
+ <table class="submenu">
+     <tr>
+     <td class="bodytextGreenSmall">
+  <!--   <a  class="bodytextGreenSmall"  href="/india/head/directions">Trace Route </a>
+   -->
+   &nbsp;&nbsp;
+    <a  class="bodytextGreenSmall" href="/india/head/distancecalculator"> Distance Calculator</a>
+  &nbsp;&nbsp;
+
+      <a  class="bodytextGreenSmall" href="/rTCAction.dont?method=displayRTCStation"> Bus Services</a>
+  &nbsp;&nbsp;
+      <!--
+      <a class="bodytextGreenSmall" href="/place.do?method=loadAddPlace">Add Place </a>
+  &nbsp;&nbsp;
+      -->
+
+       <a   class="bodytextGreenSmall" href="/india/head/banks">IFSC Codes </a>
+  &nbsp;&nbsp;
+      <a   class="bodytextGreenSmall" href="/india/trace/mobile">Trace Mobile Number </a>
+   &nbsp;&nbsp;
+       <a  class="bodytextGreenSmall"  href="/india/head/temperature">Weather </a>
+        &nbsp;&nbsp;
+         <a  class="bodytextGreenSmall" href="/place.dont?method=nearByPlacesByPlace">Search Place
+     </a>
+        <!--
+      &nbsp;&nbsp;
+       <a href="/india/head/QuestionPaper">Question papers </a>
+        -->
+
+
+   &nbsp;&nbsp;
+
+<!--
+      <a  class="bodytextGreenSmall" href="/india/trace/STD">STD Codes </a>
+   &nbsp;&nbsp;
+    -->
+       <a   class="bodytextGreenSmall" href="/india/trace/MYIP">Trace IP  </a>
+   &nbsp;&nbsp;
+
+           <a   class="bodytextGreenSmall" href="https://onefivenine.com/web/jsp/map/secureloadNearMe.jsp?type=cashPoints"> Available Cash ATM/Banks   </a>
+   &nbsp;&nbsp;
+       <a   class="bodytextGreenSmall" href="https://onefivenine.com/web/jsp/map/secureloadNearMe.jsp?type=pollingBooth"> Locate Polling Booth   </a>
+   &nbsp;&nbsp;
+
+
+  <a   class="bodytextGreenSmall" href="/india/head/Suggestion">Report an Error </a>
+  &nbsp;&nbsp;
+  <a   class="bodytextGreenSmall" href="/india/head/Suggestion">contact </a>
+  &nbsp;&nbsp;
+
+        <a  class="bodytextGreenSmall" href="javaScript:clickLinkEdit('/loginRegister.dont?method=listUserProfileAll')">People </a>
+  &nbsp;&nbsp;
+        <a  class="bodytextGreenSmall" href="/india/info/statescovid">Corona Cases Count </a>
+
+
+  <!--
+   <a  class="bodytextGreenSmall" href="/india/info/SiteMaps">Latest </a>
+  &nbsp;&nbsp;
+  !-->
+   <!--
+  <a  class="bodytextGreenSmall" href="/india/head/makemoney">MAKE MONEy ! </a>
+  !-->
+  </td>
+
+
+
+
+      </tr>
+
+
+
+
+
+
+
+  </table>
+
+
+  </div>
+
+
+
+
+
+
+        <div class="headerwidth" >
+       <!--google adsense 1 -->
+         
+
+
+
+
+
+
+
+
+
+ 
+
+
+ <div class="wrapper mobileonlydispaly" >  
+    
+    
+<!-- RD responsive 1 -->
+<ins class="adsbygoogle"
+     style="display:block;min-height:280px"
+     data-ad-client="ca-pub-5256507338893597"
+     data-ad-slot="2352911479"
+     data-ad-format="auto"></ins>
+<script>
+(adsbygoogle = window.adsbygoogle || []).push({});
+</script>
+    </div>          
+
+    
+  
+                        
+  <div class=" mobilenodispaly" >  
+<!-- header banner -->
+<ins class="adsbygoogle mobilenodispaly"
+     style="display:block"
+     data-ad-client="ca-pub-5256507338893597"
+     data-ad-slot="0863037362"
+     data-ad-format="auto"></ins>
+<script>
+(adsbygoogle = window.adsbygoogle || []).push({});
+</script>
+   
+    </div>
+        
+    
+    
+
+
+
+         </div>
+
+
+
+    <div  class="wrapperscontainerplusad" >  <!---div2--> <!--content+right verticalad-->
+
+
+
+
+    <div  class="wrapperscontainer"> <!-- div3-->  <!--content-->
+
+ <div class="wrapper">    
+
+
+
+
+
+
+
+
+
+
+<script type="text/javascript" src="/web/js/ajax.js"></script>
+
+
+
+<form name="villageForm" method="post" action="/village.dont;jsessionid=C51221C22B1B366DF665348DA4E36BCF">
+
+
+<div class="bcrumb_item_arr">
+<table>
+<tr>
+
+
+
+<td>
+<a href="/village.dont?method=displayCountry" >
+
+  India </a>
+ &nbsp;&nbsp;
+ 
+</td>
+
+
+<td>
+<a href="/india/villag/state/Odisha" >
+
+  Odisha </a>
+ &nbsp;&nbsp;
+</td>
+
+
+
+<td>
+
+<a href="/india/villag/Ganjam" >
+ Ganjam </a>
+ &nbsp;&nbsp;
+</td>
+
+
+
+
+<td>
+
+<a href="/india/villag/Ganjam
+/Rangeilunda" >
+ Rangeilunda </a>
+ &nbsp;&nbsp;
+</td>
+
+
+
+<td>
+
+<a href="javaScript:clickLink('/india/villages/Ganjam
+/Rangeilunda
+/Kotharsingi
+ ')" >
+ 
+ Kotharsingi </a>
+ &nbsp;&nbsp;
+</td>
+
+
+
+
+</tr>
+
+
+</table>
+
+</div>
+
+</form>
+
+<script>
+
+ 
+function referOpenModel() {	  
+//alert("ll")
+ var myDailod=$("#referextdiv").dialog(
+ {  
+ modal:true,
+  hide: 'explode' 
+  }
+ );
+
+ $(".ui-dialog-titlebar").hide();
+	
+}
+  
+    
+function submitReport( type1){
+   // alert(type1)
+    var prodId1='152926';
+
+var content = document.getElementById('articText2').value; 
+   var reportemail = document.getElementById('reportemail').value; 
+ 
+     var validatereview=content
+       validatereview = replaceEditorHtmlforValidate(validatereview)
+       validatereview = trim(validatereview)
+      
+ //     alert(validatereview)
+    if(trim(validatereview)==''|| validatereview=='Report'){
+      alert("please write Few worrds" ) 
+      return;
+      }
+    // var  review=decodeEditorHtml(content);=
+   var review=content
+// var  review=decodeEditorHtml(content);
+
+
+var productType="google"+type1;
+    var ajaxUrl="/review.dont?method=report&productId="+prodId1+"&productType="+productType;
+ajaxUrl=ajaxUrl+"&review="+content;
+ajaxUrl=ajaxUrl+"&posterMail="+reportemail;
+    
+    
+
+        //alert(ajaxUrl)
+
+  callAjax(ajaxUrl);
+alert("Thanks for Reporting!")
+
+    
+    
+    	 $("#referextdiv").dialog("close");
+
+  
+}
+    
+    
+</script> 
+    
+    
+    
+       
+      
+ <!-- <div id='referextdiv'   Title="Type Your EMails to Share" > -->
+<dialog id="referextdiv">
+
+<div>
+    
+    <h3>Report</h3>
+    
+    Write Detailed Reason for  Report or Delete .
+     <textarea id="articText2" name="articText2" style="width: 80%; height: 80px;" cols="10" onkeyup="autoresize(this)"  
+     onfocus="if(this.value==this.defaultValue)this.value='';"
+              onblur="if(this.value=='')this.value=this.defaultValue";>Report</textarea> 
+    <br>
+    Email :  <input type="text" id="reportemail" name="reportemail"/>
+    <br><br>
+    <a href="javascript:submitReport('report')" > Report</a>     
+    <br><br>
+    
+        <a href="javascript:submitReport('delete')" > Delete This Place</a>
+
+    </div>
+</dialog>
+ <!-- </div> -->
+ 
+ <!--</div> -->
+ <!--</div> -->
+</script>
+    
+    
+    </div>
+     
+      
+    
+     
+         
+                 
+<div class="wrapper">        
+ <div class="tablegraybackground">
+   
+     
+     
+     
+     <div class="list_item">
+   <h2 style="display: inline;">
+NIST Bus Stand 
+</h2>
+<br> Way to NIST; National Institute Of Science and Technology (NIST); Odisha 761008; India
+<b>phone:</b><br> 
+
+</div>
+   
+</div>
+    
+ </div>
+          
+          <div class="wrapper" align="left">        
+   
+<a href="javascript:referOpenModel()"> Report/Delete</a>        
+ </div>
+          
+          
+ <div class="wrapper">
+
+
+   
+  
+
+
+
+
+
+<!-- Leaflet -->
+<link
+  rel="stylesheet"
+  href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+/>
+
+
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+<script type="text/javascript">
+  // Put your MapTiler key here (better: load from config like core.Prop.maptilerKey)
+  var MAPTILER_KEY = "V27InMvTFxhf4aJc8Izx";
+
+  var map;
+  var polygonLayer;
+
+  function geoInitializeonDemand() {
+    refreshMap(19.199321746826172, 84.7446060180664, 13);
+  }
+
+  function refreshMap(lat, lang, zoom) {
+    // If map already exists (refresh), destroy and rebuild cleanly
+    if (map) {
+      map.remove();
+      map = null;
+    }
+
+    map = L.map("geo_canvas", {
+      zoomControl: false,      // remove + / - buttons
+      dragging: false,         // disable mouse drag
+      scrollWheelZoom: false,  // disable mouse wheel zoom
+      doubleClickZoom: false,  // disable double click zoom
+      boxZoom: false,          // disable shift+drag zoom
+      keyboard: false,         // disable keyboard navigation
+      tap: false,              // disable touch zoom (mobile)
+      touchZoom: false,        // disable pinch zoom
+      preferCanvas: true
+    }).setView([lat, lang], zoom);
+
+    // MapTiler basemap tiles
+    L.tileLayer(
+      "https://api.maptiler.com/maps/streets/{z}/{x}/{y}.png?key=" + MAPTILER_KEY,
+      {
+        tileSize: 512,
+        zoomOffset: -1,
+        attribution:
+          '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> contributors'
+      }
+    ).addTo(map);
+
+
+  }
+</script>
+
+
+
+
+
+ <div id="geo_canvas" style="width:90%; height: 250px ; border: 2px coral solid; display:none"  align="center" >
+ <br><br><br><br><b>LOADING   MAP ......</b>
+ </div>
+
+ <div >
+     <button
+            type="button"
+            onclick="document.getElementById('mapStaticImg').style.display='none'; document.getElementById('geo_canvas').style.display='block'; geoInitializeonDemand();this.style.display='none';"
+            style="right:12px;bottom:12px;padding:8px 12px;cursor:pointer;">
+            View interactive map
+          </button>
+
+
+<div id="mapStaticImg" style="width:100%; height: 98%; border: 2px coral solid;">
+<img src="" width="100%" height="100%" alt="">
+</div>
+
+  </div>
+
+
+        
+ </div>
+     
+  <div class="wrapper">  <!--bus_station-->
+      
+  
+      
+      
+
+
+
+
+
+
+
+<script type="text/javascript" src="/web/js/ajax.js"></script>
+<script type="text/javascript">
+    
+    function onpageloadGeneric(){
+        loadReviews()
+    }
+
+function openPostReview(){
+if(validateReviewLogin()==false)return;
+
+
+
+document.getElementById("postReviewTD").style.display=''
+document.getElementById("postReviewlinkTD").style.display='none'
+
+
+
+}
+
+function openPostReviewWithOutWarning(){
+//if(validateReviewLogin()==false)return;
+
+
+
+document.getElementById("postReviewTD").style.display=''
+document.getElementById("postReviewlinkTD").style.display='none'
+
+
+
+}
+
+
+
+// use it on Load for Performance
+function loadReviews(){
+   // alert("111")
+
+var ajaxUrl='/review.dont?method=loadReviews&productId=152926&productType=GPlace';
+
+
+//var out= callAjax(ajaxUrl)
+retrieveURLAsync(ajaxUrl,"","reviewId");
+
+}
+
+
+
+function updateReview(){
+//alert("lll")
+// do ajax call to get Cooments
+
+ //var myIFrame = document.getElementById("rte1");  
+     // var content =document.getElementById('rtecontent').contentWindow.document.body.innerHTML; 
+    var content =document.getElementById('articText').value; 
+    
+    if(content=='' ||content=='Write review') {
+        alert("Write review"); 
+        return false;
+    }
+    document.reviewForm.review.value=content;
+      
+     
+ 
+
+var prodId='152926';
+
+if(prodId==null||trim(prodId)==''){
+alert("Some Thing went wrong.we are unable to add your Review as School/College.. is Missing .You can refersh/revisit the Page and add Review again.");
+alert("please Click on Report bug and let us know how to reproduce this problem.it will hep us a lot in fixing this issue permanently");
+
+}
+
+var ajaxUrl='/review.dont?method=insertReview&productId='+prodId+'&productType=GPlace&userId='
+
+//alert(document.reviewForm.review.value)
+var review=document.reviewForm.review.value
+var overAllRating='' ;
+
+try{
+for(var i=0;i<4;i++){
+if (document.reviewForm.overAllRating[i].checked){
+      {
+       overAllRating = document.reviewForm.overAllRating[i].value;
+      }
+   }
+   }
+   
+}catch(e){
+}
+   
+
+      var validatereview = replaceEditorHtmlforValidate(review)
+       validatereview = trim(validatereview)
+      
+ //     alert(validatereview)
+    if(trim(validatereview)==''){
+      alert("please write Review" ) 
+      return;
+      }
+      
+      
+    if(overAllRating==''){
+      alert("please Select any of Over All Rating" ) 
+      return;
+      }
+      
+   
+   //alert(overAllRating)
+   if(overAllRating==""){
+   overAllRating=-1;
+   }
+
+review=decodeEditorHtml(review);
+review="."+review;
+ajaxUrl=ajaxUrl+"&overAllRating="+overAllRating+"&review="+review;
+
+//var out= callAjax(ajaxUrl)
+retrieveURL(ajaxUrl,"","reviewId");
+//document.getElementById("divReviews").innerHTML=out;
+
+//divComments
+document.getElementById("postReviewTD").style.display='none'
+
+    return true;
+}
+
+
+
+</script>
+
+
+
+<table align="left" width="100%" >
+<tr>
+
+<td width="20%">
+</td>
+<td>
+
+
+<table align="left" width="100%" >
+<tr>
+<td  id="postReviewlinkTD"  style="display:none">
+<a href="javaScript:openPostReview();"  class="bluelinkssb"><h3> Post Review</h3> </a> 
+ </td>
+   </tr>
+</table>
+</td>
+</tr>
+
+<tr>
+<td width="20%">
+</td>
+<td>
+
+
+<table  id="postReviewTD"  width="100%"  style="display:" >
+
+
+<form action="" name="reviewForm">
+<tr>
+<td >
+____________________________________
+</td>
+</tr>
+
+
+<tr>
+<td>
+<strong>Over All Rating </strong>
+<input type="radio" name="overAllRating" value="1">Poor&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+<input type="radio" name="overAllRating" value="2">Fair&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+<input type="radio" name="overAllRating" value="3">Good&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+<input type="radio" name="overAllRating" value="4">Very Good&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+<input type="radio" name="overAllRating" value="5">Excellent&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+<br>
+</td>
+</tr>
+
+
+<tr>
+<td >
+
+     <!-- include file="/web/jsp/RichText/rtesmall.jsp"%>  -->   
+
+    <br>
+    <textarea id="articText" name="articText" style="width: 90%; height: 120px;" cols="10" onkeyup="autoresize(this)"  
+     onfocus="if(this.value==this.defaultValue)this.value='';"
+              onblur="if(this.value=='')this.value=this.defaultValue";>Write review</textarea>    
+<input type="hidden" name="review" />
+
+
+
+<input type='button' name='Post' id='Post' value ='Post' onclick="updateReview();" >
+</td>
+</tr>
+
+
+
+
+</form>
+
+</table>
+
+
+</td>
+</tr>
+
+
+<tr>
+<td width="20%">
+</td>
+<td>
+
+<div id="reviewId"> 
+
+
+</div><!--reviewId-->
+
+</td>
+</tr>
+
+
+</table>
+
+
+
+
+
+  
+      
+   
+ </div>   
+    
+          
+     
+      
+  
+       
+      
+
+
+        
+
+</div> <!--div3 --> 
+
+    
+ 
+<div   style="float:left; min-height:650px;" class="mobilenodispaly"  > 
+    <br><br><br><br>
+  <!--include file="/web/jsp/asense/asenseformatskyScrapper160x600_18.jsp"%> -->
+
+     
+
+
+
+
+
+
+
+
+
+ 
+
+
+
+
+<!-- take get code from 8860526540   Skyscrapper160x600  with class="mobilenodispaly" -->
+  
+    
+<!-- Skyscrapper160x600 -->
+<ins class="adsbygoogle mobilenodispaly"
+     style="display:inline-block;width:160px;height:600px"
+     data-ad-client="ca-pub-5256507338893597"
+     data-ad-slot="8860526540"></ins>
+<script>
+(adsbygoogle = window.adsbygoogle || []).push({});
+</script>
+     
+    
+    
+
+
+
+    
+    
+
+
+
+</div>
+
+
+
+
+  <div class="headeradd">
+       <!--google adsense 1 -->
+       
+
+
+
+
+
+
+
+
+
+ 
+
+
+ <div class="wrapper mobileonlydispaly" >  
+    
+    
+<!-- RD responsive 1 -->
+<ins class="adsbygoogle"
+     style="display:block;min-height:280px"
+     data-ad-client="ca-pub-5256507338893597"
+     data-ad-slot="2352911479"
+     data-ad-format="auto"></ins>
+<script>
+(adsbygoogle = window.adsbygoogle || []).push({});
+</script>
+    </div>          
+
+    
+  
+                        
+  <div class=" mobilenodispaly" >  
+<!-- header banner -->
+<ins class="adsbygoogle mobilenodispaly"
+     style="display:block"
+     data-ad-client="ca-pub-5256507338893597"
+     data-ad-slot="0863037362"
+     data-ad-format="auto"></ins>
+<script>
+(adsbygoogle = window.adsbygoogle || []).push({});
+</script>
+   
+    </div>
+        
+    
+    
+
+
+
+ </div>
+
+    
+</div> <!--div2 -->
+
+                  
+          
+
+<div class="sitefooter" style="clear:both;padding:12px 12px 16px;text-align:center;line-height:1.8;border-top:1px solid #d5d5d5;background-color:#fff;">
+All Rights Reserved 2021 onefivenine.com
+<a href="/suggestion.dont?method=loadSuggestion" style="display:inline-block;margin:0 10px;">Contact Us</a>
+<a href="/suggestion.dont?method=loadSuggestion&type=about" style="display:inline-block;margin:0 10px;">About Us</a>
+<a href="/suggestion.dont?method=pp" style="display:inline-block;margin:0 10px;">Privacy Policy</a>
+</div>
+
+</div> <!--div1 -->
+
+
+
+
+
+<!-- Google tag (gtag.js) -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-K8N5N8208S"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+
+  gtag('config', 'G-K8N5N8208S');
+
+
+</script>
+
+</body>
+
+<script async type="text/javascript" src="/web/js/general.js"></script>
+<script async  type="text/javascript"  src="/web/js/ajax.js"></script>
+
+<script async type="text/javascript"
+	src="https://ajax.googleapis.com/ajax/libs/jquery/1.5/jquery.min.js"></script>
+<script async type="text/javascript"
+	src="https://ajax.googleapis.com/ajax/libs/jqueryui/1.8/jquery-ui.min.js"></script>
+
+
+
+
+
+     
+     </html>
+      
+      
+      
+   
