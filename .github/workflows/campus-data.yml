@@ -32,11 +32,11 @@ jobs:
       - name: Install tools
         run: pip install requests
 
-      - name: Probe named campus places (Google-listed places mirrored by onefivenine, Wikimapia)
+      - name: Probe named campus places (Google-listed places mirrored by onefivenine)
         continue-on-error: true
         run: |
           mkdir -p scripts/campus_raw
-          python - <<'EOF' 2>&1 | tee scripts/campus_raw/probe.log
+          python - <<'EOF' 2>&1 | tee scripts/campus_raw/probe2.log
           import html, json, re, time
           import requests
           S = requests.Session()
@@ -52,8 +52,8 @@ jobs:
               return None
           def text(s):
               return html.unescape(re.sub(r"<[^>]+>", " ", s)).replace("\xa0", " ")
-          KEY = re.compile(r"nist|national institut|galleria|atrium|attrium|lhc|octagon|tifac|hall of residence|"
-                           r"mech|hostel|canteen|gumti|sukudu|8 inn|core building|s\. ?m\. public", re.I)
+          KEY = re.compile(r"nist|national institut|galleria|atrium|attrium|\\blhc\\b|octagon|tifac|hall of residence|"
+                           r"s\\. ?m\\. public|gumti|sukudu|8 inn|core building", re.I)
           # 1) village pages around the campus -> place ids
           villages = ["https://www.onefivenine.com/india/villages/Ganjam/Chikiti/Palli",
                       "https://www.onefivenine.com/india/villages/Ganjam/Rangeilunda/Kotharsingi"]
@@ -69,18 +69,23 @@ jobs:
                               villages.append(u)
           print("villages:", len(villages)); [print("  ", v) for v in villages]
           places = {}
+          EXTRA = ["899627", "2096581", "2090616", "2091304", "764203", "2342338", "2103071"]
+          for pid in EXTRA:
+              places[pid] = {"pid": pid, "ctx": "explicit", "seen_on": []}
           for v in villages:
               r = get(v)
               if r is None or not r.ok:
                   print("village fail", v); continue
               h = r.text
-              for m in re.finditer(r"placeId=(\d+)", h):
-                  pid = m.group(1)
-                  back = text(h[max(0, m.start() - 900):m.start()])
-                  back = re.sub(r"\s+", " ", back).strip()
-                  name = back.split("distance")[0][-260:] if "distance" in back else back[-260:]
-                  if KEY.search(name):
-                      places.setdefault(pid, {"pid": pid, "ctx": name.strip(), "seen_on": []})["seen_on"].append(v.rsplit("/", 1)[-1])
+              # one listing item = <h2 ...>NAME</h2> ... ADDRESS ... N KM distance ... placeId=ID
+              for m in re.finditer(r"<h2[^>]*>(.*?)</h2>(.*?)placeId=(\d+)", h, re.S):
+                  name = re.sub(r"\s+", " ", text(m.group(1))).strip()
+                  body = re.sub(r"\s+", " ", text(m.group(2))).strip()[:200]
+                  pid = m.group(3)
+                  if KEY.search(name + " " + body):
+                      e = places.setdefault(pid, {"pid": pid, "ctx": "", "seen_on": []})
+                      e["ctx"] = f"{name} | {body}"
+                      e["seen_on"].append(v.rsplit("/", 1)[-1])
               time.sleep(0.4)
           print("candidate places:", len(places))
           # 2) detail pages -> coordinates
@@ -91,31 +96,20 @@ jobs:
                   print("detail fail", pid); continue
               h = r.text
               if not sample_saved:
-                  open(OUT + "probe_detail_sample.html", "w").write(h[:250000]); sample_saved = True
+                  sample_saved = True
               t = re.search(r"<title>(.*?)</title>", h, re.S)
               p["title"] = re.sub(r"\s+", " ", html.unescape(t.group(1))).strip() if t else ""
-              pairs = re.findall(r"(1[89]\.\d{3,})\s*[,;/ ]\s*(8[45]\.\d{3,})", h)
+              pairs = re.findall(r"refreshMap\(\s*(-?\d+\.\d+)\s*,\s*(-?\d+\.\d+)", h) or \
+                  re.findall(r"(1[89]\.\d{3,})\s*[,;/ ]\s*(8[45]\.\d{3,})", h)
               lat = re.findall(r"lat\w*['\"]?\s*[:=]\s*['\"]?(1[89]\.\d+)", h, re.I)
               lng = re.findall(r"(?:lng|lon)\w*['\"]?\s*[:=]\s*['\"]?(8[45]\.\d+)", h, re.I)
               p["pairs"] = pairs[:6]; p["lat"] = lat[:4]; p["lng"] = lng[:4]
               if not (pairs or lat):
                   nums = re.findall(r"(?<![\d.])(1[89]\.\d{4,}|8[45]\.\d{4,})(?![\d])", h)
                   p["nums"] = nums[:10]
-              print(pid, "|", p["title"], "|", pairs[:2], lat[:2], lng[:2], p.get("nums", "")[:4] if p.get("nums") else "")
+              print(pid, "|", p["title"], "|", pairs[:1], "|", p["ctx"][:120])
               time.sleep(0.4)
-          json.dump(list(places.values()), open(OUT + "probe_places.json", "w"), indent=1, ensure_ascii=False)
-          # 3) Wikimapia (public example key) - user-drawn campus objects, if any
-          for url in [
-              "http://api.wikimapia.org/?key=example&function=place.getbyarea&coordsby=bbox&bbox=84.7385,19.1920,84.7550,19.2045&format=json&count=100&data_blocks=main,geometry,location&language=en",
-              "http://api.wikimapia.org/?key=example&function=place.getnearest&lat=19.1982&lon=84.7466&format=json&count=50&data_blocks=main,geometry,location&language=en",
-              "http://api.wikimapia.org/?key=example&function=place.search&q=NIST&lat=19.1982&lon=84.7466&format=json&count=50&data_blocks=main,geometry,location&language=en",
-          ]:
-              r = get(url)
-              tag = url.split("function=")[1].split("&")[0]
-              if r is not None:
-                  print("wikimapia", tag, r.status_code, len(r.content))
-                  open(OUT + f"wikimapia_{tag}.json", "w").write(r.text[:400000])
-              time.sleep(1)
+          json.dump(list(places.values()), open(OUT + "probe_places2.json", "w"), indent=1, ensure_ascii=False)
           EOF
 
       - name: Commit results to this branch
