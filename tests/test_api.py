@@ -168,6 +168,57 @@ def test_suggest_landmarks_nist_first(client):
     assert any("Palur" in x["name"] for x in r)
 
 
+def test_campus_layer_nist(client):
+    """The NIST University layer: every outline is a real polygon inside the campus frame."""
+    r = client.get("/api/campus/nist")
+    assert r.status_code == 200 and "max-age" in r.headers.get("cache-control", "")
+    c = r.json()
+    assert c["id"] == "nist" and "Berhampur" in c["address"]
+    (s, w), (n, e) = c["bounds"]
+    ids = [b["id"] for b in c["buildings"]]
+    assert len(ids) == len(set(ids)) >= 20
+    names = {b["name"] for b in c["buildings"]}
+    for must in ("Galleria", "Octagon", "Atrium", "TIFAC-CORE", "Lecture Hall Complex (LHC)",
+                 "Indoor Stadium", "Swimming Pool", "Mechanical Building"):
+        assert must in names, must
+    for b in c["buildings"]:
+        assert len(b["poly"]) >= 3 and b["area"] > 50, b["id"]
+        assert all(s <= lat <= n and w <= lon <= e for lat, lon in b["poly"]), b["id"]
+        assert s <= b["center"][0] <= n and w <= b["center"][1] <= e
+    assert client.get("/api/campus/nowhere").status_code == 404
+
+
+def test_suggest_nist_sections(client):
+    """Search finds the campus *and* each section - offline, in one request."""
+    r = client.get("/api/suggest", params={"q": "NIST"}).json()
+    assert r[0]["campus"] == {"id": "nist"} and r[0]["type"] == "poi"
+    sections = [x["name"] for x in r if x.get("type") == "campus"]
+    assert len(sections) >= 6 and any(n.startswith("Galleria") for n in sections)
+    r = client.get("/api/suggest", params={"q": "nist library"}).json()
+    assert r[0]["name"].startswith("Central Library") and r[0]["campus"]["building"] == "octagon"
+    assert "Octagon" in r[0]["address"]
+    r = client.get("/api/suggest", params={"q": "Galleria"}).json()
+    assert r[0]["campus"]["building"] == "galleria" and r[0]["district"] == "Ganjam"
+    r = client.get("/api/suggest", params={"q": "lhc"}).json()
+    assert r[0]["campus"]["building"] == "lhc"
+    # generic words are only campus words after "NIST" - "library" or a hotel must not jump to NIST
+    for q in ("library", "hotel galleria", "swimming pool"):
+        rows = client.get("/api/suggest", params={"q": q}).json()
+        assert not any(x.get("campus") for x in rows), q
+
+
+def test_geocode_campus_offline(client, monkeypatch):
+    import app.main as m
+
+    async def boom(*a, **k):
+        raise m.httpx.ConnectError("offline")
+    monkeypatch.setattr(m, "_nominatim", boom)
+    r = client.get("/api/geocode", params={"q": "einstein hall nist"}).json()
+    assert r[0]["campus"]["building"] == "einstein"
+    r = client.get("/api/geocode", params={"q": "NIST University, Berhampur"}).json()
+    assert r[0]["campus"] == {"id": "nist"} and abs(r[0]["lat"] - 19.198) < 0.005
+
+
 def test_geocode_drops_foreign_rows(client, monkeypatch):
     """Upstream search engines sometimes answer with foreign cities - the map is India-only,
     so those rows must be dropped and Odisha rows kept."""

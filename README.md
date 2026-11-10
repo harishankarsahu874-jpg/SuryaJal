@@ -22,7 +22,9 @@ Users can identify a roof, adjust household assumptions, compare energy and wate
 
 | Area | Available functionality |
 | --- | --- |
-| Roof mapping | Satellite map, address and PIN-code search, offline place suggestions, AI-assisted outlines, manual drawing and editable roof corners. |
+| Roof mapping | Satellite map, AI-assisted outlines, manual drawing and editable roof corners. |
+| Place search | Addresses, PIN codes, towns, hotels, restaurants, cafés and other businesses across Odisha, with live suggestions. Category searches such as "hotels in Berhampur" list and pin every match. |
+| NIST University campus | Every traced building and open area of the NIST University campus in Berhampur is outlined and labelled on the map. Searching for a building or a section inside it (for example "nist library") shows that building, and tapping a building selects its roof for assessment. |
 | Panel layout | Automatic panel placement on the roof polygon, with edge clearance and physical fit checks. |
 | Solar assessment | Recommended capacity, monthly generation, installation cost, central and Odisha subsidy estimates, electricity bills before and after solar, net-metering estimates, payback, IRR and a 25-year savings view. |
 | Rainwater assessment | Monthly harvest, storage tank and recharge sizing, water-demand coverage, tanker savings and CHHATA eligibility estimates. |
@@ -31,7 +33,11 @@ Users can identify a roof, adjust household assumptions, compare energy and wate
 | Reporting | Three-page A4 PDF covering the roof, solar and rainwater results, with a QR code and shareable assessment links. |
 | Optional accounts | Sign up, sign in, save and reopen roofs, revoke sessions and delete an account. Guests can assess roofs without signing in. |
 
-The dashboard uses separate **Roof Map**, **Solar**, **Rainwater** and **Report** views. Desktop navigation appears at the top; mobile and tablet navigation appears at the bottom. The map occupies its own view rather than sharing a fixed-width results panel.
+The dashboard opens on a full-screen **Roof Map**, with no section tabs above it. Once a roof is selected, its card shows the roof area and a **Show More** button. Show More unfolds the **Solar** and **Rainwater** results, plus a link to the **Report**. Opening one of these views shows a section bar for moving between Solar, Rainwater and Report, or back to the map. That bar appears only on the results views. A new roof selection starts with the card folded again; adjusting the current outline leaves it open. Shared links and saved roofs open on the map with the roof outlined, and refreshing the page reopens the results view that was showing.
+
+**Search.** Suggestions merge the bundled offline places, the campus map, Esri's World Geocoding Service (businesses OpenStreetMap lacks, which covers many Odisha hotels and restaurants) and Photon (OpenStreetMap). Results near the current map view rank first. Pressing Go uses the highlighted suggestion; for a category search ("restaurants in Puri", "hotels near me") it pins every match on the map.
+
+**NIST University campus map.** Searching "NIST" or tapping the **NIST University** chip flies to the campus. From zoom 16 the map outlines and labels each building and open area, colour-coded by kind (academic, hostel, sports, facility, transport and so on). Zooming in adds floor counts and, at zoom 19, the sections inside each building. Tapping a building outlines its roof and opens the usual card: area, the building's sections, and **Show More** for solar and rainwater. Open areas such as the pool, courts, sports ground and bus stand are labelled but cannot be selected as roofs. Buildings whose names are not confirmed are labelled B1–B7 rather than guessed. The layer comes from `data/campus_nist.json`, which `scripts/build_campus.py build` generates from the hand-traced table `scripts/campus_nist_sections.json`; edit that table to rename a building or add a section.
 
 Report downloads use a fetched PDF rather than relying solely on browser navigation, with an open-report fallback. The browser can supply a satellite crop to the backend for report generation when server-side imagery is unavailable. When opened locally, the application can obtain a LAN address for phone-accessible QR links; the phone must be on the same reachable network.
 
@@ -53,9 +59,9 @@ SuryaJal/
 ├── frontend/            React and TypeScript source
 ├── static/site/         Built frontend served by FastAPI
 ├── static/              Original no-build tool and its assets
-├── data/                Bundled climate data; default runtime storage
+├── data/                Bundled climate data and campus map; default runtime storage
 ├── models/              Downloaded MobileSAM ONNX models
-├── scripts/             Model download and climate-prefetch utilities
+├── scripts/             Model download, climate-prefetch and campus-map utilities
 ├── tests/               Backend, calculation, segmentation and account tests
 ├── docs/                Historical screenshots and sample report
 ├── Dockerfile           Container build and server startup
@@ -75,6 +81,7 @@ SuryaJal/
 | `rain.py` | Rainwater harvest, storage, recharge, scheme checks and Green Score. |
 | `climate.py`, `odisha.py` | Climate retrieval and fallback, district and DISCOM lookup. |
 | `pincode.py`, `places.py` | Bundled PIN-code lookup and place suggestions. |
+| `campus.py` | NIST University campus map: building outlines, sections and campus search. |
 | `report.py` | Three-page PDF, QR code and roof thumbnail generation. |
 | `auth.py`, `stats.py` | Accounts, saved roofs and anonymous aggregate statistics. |
 
@@ -166,7 +173,8 @@ Use `/docs` for complete request schemas, optional parameters and response forma
 | --- | --- | --- |
 | GET | `/api/health`, `/api/config` | Service status, AI readiness, defaults and source references. |
 | GET | `/api/odisha/table`, `/api/odisha/locate`, `/api/odisha/tariff` | Bundled climate table, district/DISCOM lookup and itemised bills. |
-| GET | `/api/suggest`, `/api/geocode`, `/api/reverse` | Offline suggestions, online place search and reverse geocoding. |
+| GET | `/api/suggest`, `/api/geocode`, `/api/reverse` | Offline and campus suggestions, online place search and reverse geocoding. |
+| GET | `/api/campus/{id}` | Campus map layer (`nist`): outlines, labels and sections of each building. |
 | POST | `/api/segment` | Roof outline from labelled map points. |
 | POST | `/api/assess` | Solar, rainwater, score and panel layout from a polygon and household inputs. |
 | GET / POST | `/r`, `/api/report` | PDF report; POST accepts a query and optional browser-captured imagery. |
@@ -242,6 +250,8 @@ Do not mount over `/app/data`: that would hide the bundled climate fallback file
 - Cached imagery and bundled climate data improve resilience but do not make the entire application offline.
 - QR links using a LAN address require network reachability and a suitable firewall configuration. Use a public deployment for remote sharing.
 - Subsidy eligibility, installation costs, tariffs and local requirements may change. Final approvals remain with the relevant authorities.
+- The NIST campus map reflects the January 2026 imagery. Buildings built later are missing until they are traced. Seven buildings (B1–B7) are not yet named, and the hostel blocks Tagore Hall and Marie Curie Hall are not yet located. Albert Einstein Hall and the Indoor Stadium are identified from their shapes and are marked as probable. Campus roof areas are horizontal footprints traced from imagery, so treat them as estimates.
+- Business search uses Esri's public geocoder without an API key, and results are not stored. Coverage of small shops varies, and heavy production use may need an ArcGIS key.
 
 Historical screenshots and a sample report remain in `docs/` as reference material. They are not embedded here and may not match the current interface or PDF layout.
 
@@ -253,6 +263,7 @@ Historical screenshots and a sample report remain in `docs/` as reference materi
 - Roof segmentation: [MobileSAM](https://github.com/ChaoningZhang/MobileSAM), the [Acly ONNX export](https://huggingface.co/Acly/MobileSAM) and Meta's [Segment Anything](https://segment-anything.com/).
 - Backend: FastAPI, ONNX Runtime, OpenCV, Pillow and ReportLab.
 - Frontend: React, TypeScript, Vite, Tailwind CSS, shadcn/ui, Radix UI, Motion, Lucide and Leaflet. The StackSpread component uses [Hyperiux Vault](https://vault.hyperiux.com/).
-- Imagery: Esri, Maxar, Earthstar Geographics and the GIS User Community; retain attribution on maps and reports.
-- Search: [Nominatim](https://nominatim.org/) and OpenStreetMap contributors. The backend caches and throttles Nominatim requests.
+- Imagery: Esri, Vantor (formerly Maxar), Earthstar Geographics and the GIS User Community; retain attribution on maps and reports.
+- Search: [Esri World Geocoding Service](https://developers.arcgis.com/rest/geocode/), [Photon](https://photon.komoot.io/), [Nominatim](https://nominatim.org/) and OpenStreetMap contributors. The backend caches and throttles Nominatim requests.
+- NIST campus map: outlines traced by hand on Esri World Imagery (Vantor, 7 January 2026, 0.34 m). Building names and sections come from [nist.edu](https://www.nist.edu/campus). Public place listings and Overture Maps places were used only as naming hints; no geometry was taken from them.
 - Photography and fonts: Unsplash; Outfit, Plus Jakarta Sans, JetBrains Mono and DejaVu Sans. Retain the respective asset and dependency licences.

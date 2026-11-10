@@ -161,7 +161,7 @@ function RoofCard({ roof, onDelete }: { roof: SavedRoof; onDelete: () => void })
           {s.score} · {s.grade}
         </span>
         <span className="absolute bottom-3 left-3 rounded-full bg-black/55 px-2.5 py-1 text-[11px] font-medium text-white backdrop-blur">
-          {s.method === "ai" ? "AI outline" : "Hand-drawn"} · {fmtIN(s.area_m2)} m²
+          {s.method === "ai" ? "AI outline" : s.method === "mapped" ? "Campus map outline" : "Hand-drawn"} · {fmtIN(s.area_m2)} m²
         </span>
       </div>
       <div className="flex flex-1 flex-col p-5">

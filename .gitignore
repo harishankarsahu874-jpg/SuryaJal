@@ -15,3 +15,6 @@ data/suryajal.db-*
 frontend/node_modules/
 frontend/dist/
 *.local
+
+# NIST campus re-tracing scratch (scripts/build_campus.py fetch/preview)
+scripts/campus_raw/

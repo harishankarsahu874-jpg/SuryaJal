@@ -93,11 +93,12 @@ export function SolarView() {
         <div className="mt-3 flex flex-wrap items-center gap-1.5">
           <Pill tone="plain" className="bg-white/70">{fmtIN(r.area_m2)} m² roof</Pill>
           <Pill tone="plain" className="bg-white/70">
-            {roof.method === "manual" ? "Hand-drawn outline" : roof.method === "ai-edited" ? "AI + hand-tuned"
+            {roof.method === "manual" ? "Hand-drawn outline" : roof.method === "mapped" ? "Campus map outline"
+              : roof.method === "ai-edited" ? "AI + hand-tuned"
               : `AI outline${roof.conf != null ? ` · ${Math.round(Math.min(1, roof.conf) * 100)}%` : ""}`}
           </Pill>
           <button type="button" onClick={() => setTab("map")}
-            className="ml-auto inline-flex items-center gap-1 rounded-full px-2 py-1 text-xs font-semibold text-sage-700 hover:bg-white/70 lg:hidden">
+            className="ml-auto inline-flex items-center gap-1 rounded-full px-2 py-1 text-xs font-semibold text-sage-700 hover:bg-white/70">
             <PenLine className="size-3.5" /> Edit on map
           </button>
         </div>

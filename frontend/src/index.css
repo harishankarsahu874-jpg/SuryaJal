@@ -203,12 +203,23 @@
 .sj-place-pin { width: 16px; height: 16px; margin: -8px 0 0 -8px; border-radius: 50%; background: #ef4444; border: 3px solid #fff; box-shadow: 0 3px 12px rgba(0,0,0,.5); }
 .sj-place-label.leaflet-tooltip { background: rgba(24,34,28,.92); color: #fff; border: 0; border-radius: 10px; font-weight: 700; font-size: 12.5px; padding: 6px 11px; box-shadow: 0 6px 18px rgba(0,0,0,.35); font-family: var(--font-sans); white-space: nowrap; }
 .sj-place-label.leaflet-tooltip::before { display: none; }
+/* search results of a category search ("hotels in Berhampur") */
+.sj-result-pin { width: 14px; height: 14px; margin: -7px 0 0 -7px; border-radius: 50%; background: #f97316; border: 2.5px solid #fff; box-shadow: 0 2px 8px rgba(0,0,0,.45); cursor: pointer; }
+/* NIST University campus layer: a label per building, coloured by what it is (--k) */
+.sj-campus-label { position: absolute; left: 0; top: 0; transform: translate(-50%, -50%); display: flex; flex-direction: column; align-items: center; gap: 1px; white-space: nowrap; pointer-events: none; }
+.sj-campus-label > span { display: inline-flex; align-items: center; gap: 5px; padding: 2px 7px 2px 6px; border-radius: 7px; background: rgba(12,20,16,.8); color: #fff; font: 700 11.5px/1.35 var(--font-sans); box-shadow: 0 2px 8px rgba(0,0,0,.35); }
+.sj-campus-label > span > i { width: 7px; height: 7px; flex: none; border-radius: 2px; background: var(--k); }
+.sj-campus-label small { padding: 1px 6px; border-radius: 6px; background: rgba(12,20,16,.66); color: rgba(255,255,255,.9); font: 600 10px/1.3 var(--font-sans); }
+.sj-campus-label.unnamed > span { background: rgba(12,20,16,.62); color: #e5e7eb; font-weight: 600; }
+.sj-campus-title { position: absolute; left: 0; top: 0; transform: translate(-50%, -100%); white-space: nowrap; pointer-events: none; padding: 3px 10px; border-radius: 999px; background: rgba(252,211,77,.95); color: #1c1917; font: 800 12px/1.3 var(--font-sans); letter-spacing: .06em; text-transform: uppercase; box-shadow: 0 3px 12px rgba(0,0,0,.4); }
+.sj-campus-badge { position: absolute; left: 0; top: 0; transform: translate(-50%, -50%); display: inline-flex; align-items: center; gap: 5px; padding: 5px 11px 5px 8px; border-radius: 999px; background: #fcd34d; color: #1c1917; border: 2px solid #fff; font: 800 12px/1 var(--font-sans); white-space: nowrap; box-shadow: 0 4px 14px rgba(0,0,0,.45); cursor: pointer; }
+.sj-campus-badge svg { width: 15px; height: 15px; flex: none; }
 .leaflet-container { font-family: var(--font-sans); background: #18221c; }
 .leaflet-control-zoom a, .leaflet-control-layers { border-radius: 12px !important; }
 .leaflet-bar { border: 0 !important; box-shadow: 0 4px 14px rgba(0,0,0,.25) !important; border-radius: 12px !important; overflow: hidden; }
 .leaflet-control-attribution { font-size: 10px; }
 @media (max-width: 1023px) {
-  .sj-map .leaflet-bottom { margin-bottom: calc(var(--sj-stack, 72px) + 10px); transition: margin-bottom .25s ease; }
+  .sj-map .leaflet-bottom { margin-bottom: calc(var(--sj-stack, 72px) + 10px + env(safe-area-inset-bottom)); transition: margin-bottom .25s ease; }
 }
 @media (pointer: coarse) {
   .sj-map .leaflet-control-zoom { display: none; }   /* phones pinch to zoom */
