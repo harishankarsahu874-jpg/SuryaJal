@@ -301,7 +301,40 @@ export interface Solar {
   trees_equiv: number
   full_roof_kw: number
   full_roof_gen: number
+  maintenance: SolarMaintenance
   pr_avg: number
+}
+
+export interface SolarMaintenance {
+  panels: number
+  kw: number
+  roof_type: string
+  roof_type_label: string
+  mounting_type: string
+  rooftop_care_note: string
+  panel_area_m2: number
+  total_weight_kg: number
+  load_kg_per_m2: number
+  safe_rcc_load_kg_m2: number
+  monthly_cleans: number[]
+  cleans_per_year: number
+  water_per_panel_l: number
+  water_per_wash_l: number
+  annual_wash_water_l: number
+  minutes_per_wash: number
+  dust_loss_pct: number
+  kwh_protected_yr: number
+  savings_protected_yr: number
+  free_cmc_years: number
+  years_1_to_5_annual_cost: number
+  diy_annual_cost: number
+  pro_visit_cost: number
+  amc_annual_cost: number
+  inverter_replacement_year: number
+  inverter_replacement_cost: number
+  lifetime_years: number
+  lifetime_cost_diy: number
+  lifetime_cost_amc: number
 }
 
 export interface Rain {
@@ -408,4 +441,15 @@ export interface SavedRoof {
   created_at: number
   updated_at: number
   updated?: boolean
+}
+
+export interface AgentTurn {
+  role: "user" | "assistant"
+  content: string
+}
+
+export interface AgentResponse {
+  reply: string
+  suggestions: string[]
+  source: string
 }

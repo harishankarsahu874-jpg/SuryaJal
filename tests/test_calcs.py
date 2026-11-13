@@ -398,3 +398,33 @@ def test_layout_on_rectangle_roof():
             assert min(lats) - 1e-7 <= la <= max(lats) + 1e-7
             assert min(lons) - 1e-7 <= lo <= max(lons) + 1e-7
     assert len(auto_layout(roof, 4, DEFAULTS)["panels"]) == 4
+
+
+def test_solar_maintenance_plan_and_costs():
+    s = assess_solar(150, CLIMATE, P(monthly_units=250, roof_type="rcc"))
+    m = s["maintenance"]
+    assert m["free_cmc_years"] == 5
+    assert len(m["monthly_cleans"]) == 12
+    assert m["cleans_per_year"] == sum(m["monthly_cleans"])
+    # Dry months (<65 mm rain) get 2 washes; heavy monsoon months get 1
+    assert m["monthly_cleans"][0] == 2      # Jan (12 mm)
+    assert m["monthly_cleans"][6] == 1      # Jul (315 mm)
+    assert m["water_per_wash_l"] == pytest.approx(s["panels"] * 3.5, abs=0.1)
+    assert m["annual_wash_water_l"] > 0
+    assert m["diy_annual_cost"] < m["amc_annual_cost"]
+    assert m["inverter_replacement_cost"] > 0
+    assert m["lifetime_cost_diy"] < m["lifetime_cost_amc"]
+    assert m["savings_protected_yr"] > 0
+    assert 0 < m["load_kg_per_m2"] < m["safe_rcc_load_kg_m2"]
+    assert "RCC" in m["roof_type_label"]
+
+    # Metal sheet roof adapts mounting guidance
+    metal = assess_solar(150, CLIMATE, P(monthly_units=250, roof_type="metal"))["maintenance"]
+    assert "clamp" in metal["mounting_type"].lower() or "metal" in metal["roof_type_label"].lower()
+
+    # Tiny roof with 0 panels safely returns zeroed panel maintenance costs
+    tiny = assess_solar(8, CLIMATE, P(panels=0))["maintenance"]
+    assert tiny["cleans_per_year"] == 0
+    assert tiny["diy_annual_cost"] == 0
+    assert tiny["lifetime_cost_diy"] == 0
+

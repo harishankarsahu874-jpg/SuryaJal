@@ -24,7 +24,7 @@ from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Resp
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, field_validator
 
-from . import auth, odisha, stats
+from . import agent, auth, odisha, stats
 from .climate import get_climate
 from .config import (APP_NAME, APP_VERSION, CHHATA, DEFAULTS, DISCOMS, FALLBACK_CLIMATE_FILE,
                      MAP_CENTER, MAP_ZOOM, MAX_NATIVE_ZOOM, M_PER_PX_REF_LAT, MODELS_DIR,
@@ -549,6 +549,40 @@ async def segment(req: SegmentIn):
 @app.post("/api/assess")
 async def assess(req: AssessIn):
     return JSONResponse(await run_assessment(req))
+
+
+# ------------------------------------------------------------------ AI agent (roof advisor)
+class AgentTurn(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str = Field(min_length=1, max_length=3000)
+
+
+class AgentIn(BaseModel):
+    message: str = Field(min_length=1, max_length=2000)
+    tab: Literal["map", "solar", "maintenance", "rain", "report"] = "solar"
+    address: str = Field("", max_length=200)
+    history: List[AgentTurn] = Field(default_factory=list, max_length=20)
+    assessment: Optional[dict] = None
+    assess_request: Optional[AssessIn] = None
+
+
+@app.post("/api/agent")
+async def agent_chat(req: AgentIn):
+    msg = req.message.strip()
+    if not msg:
+        raise HTTPException(422, "Message cannot be empty.")
+    data = req.assessment
+    if data is None and req.assess_request is not None:
+        data = await run_assessment(req.assess_request)
+    hist = [{"role": t.role, "content": t.content} for t in req.history]
+    return await agent.chat(
+        msg,
+        assessment=data,
+        tab=req.tab,
+        address=req.address,
+        history=hist,
+        http=state.get("http"),
+    )
 
 
 # ------------------------------------------------------------------ report (stateless GET)

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react"
 import {
   AlertTriangle, ArrowRight, Building2, Download, Grid2x2, Hourglass, Landmark, Leaf, Loader2, MapPin, Minus,
-  PenLine, Percent, Plus, Receipt, RotateCcw, Satellite, SolarPanel, Sun, TrendingUp, Zap,
+  PenLine, Percent, Plus, Receipt, RotateCcw, Satellite, SolarPanel, Sun, TrendingUp, Wrench, Zap,
 } from "lucide-react"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Slider } from "@/components/ui/slider"
@@ -10,6 +10,7 @@ import type { LatLng } from "@/lib/geo"
 import { capturePolyCrop, darkCropFor, drawLayoutImage, type TileCrop } from "@/lib/mapcrop"
 import { useReportDownload } from "@/lib/report"
 import { cn } from "@/lib/utils"
+import { SolarMaintenanceSection } from "./maintenance-view"
 import { useDashboard } from "./state"
 import { CountUp, EmptyState, MonthBars, Pill, SavingsTimeline, SectionCard, StatTile } from "./ui-bits"
 
@@ -97,6 +98,13 @@ export function SolarView() {
               : roof.method === "ai-edited" ? "AI + hand-tuned"
               : `AI outline${roof.conf != null ? ` · ${Math.round(Math.min(1, roof.conf) * 100)}%` : ""}`}
           </Pill>
+          <button
+            type="button"
+            onClick={() => document.getElementById("solar-maintenance")?.scrollIntoView({ behavior: "smooth", block: "start" })}
+            className="inline-flex items-center gap-1 rounded-full border border-sage-300/80 bg-white/85 px-2.5 py-1 text-xs font-semibold text-sage-800 transition hover:bg-white"
+          >
+            <Wrench className="size-3.5" /> Maintenance
+          </button>
           <button type="button" onClick={() => setTab("map")}
             className="ml-auto inline-flex items-center gap-1 rounded-full px-2 py-1 text-xs font-semibold text-sage-700 hover:bg-white/70">
             <PenLine className="size-3.5" /> Edit on map
@@ -325,6 +333,9 @@ export function SolarView() {
           about your latitude, for the most units across the year.
         </p>
       </SectionCard>
+
+      {/* Complete Rooftop & Panel Maintenance section inside the Solar Report */}
+      <SolarMaintenanceSection />
 
       <div className="space-y-2.5 pt-1 pb-2">
         <button type="button" onClick={() => setTab("rain")}
