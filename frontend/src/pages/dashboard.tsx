@@ -4,6 +4,7 @@ import { AnimatePresence, motion } from "motion/react"
 import { ArrowLeft, ChartColumn, Droplet, Sun } from "lucide-react"
 import { LogoMark } from "@/components/brand/logo"
 import { UserMenu } from "@/components/site/user-menu"
+import { AiAgent } from "@/features/dashboard/ai-agent"
 import { MapPanel } from "@/features/dashboard/map-panel"
 import { RainView } from "@/features/dashboard/rain-view"
 import { ReportView } from "@/features/dashboard/report-view"
@@ -110,6 +111,7 @@ function Dashboard() {
         </div>
       </div>
 
+      <AiAgent />
     </div>
   )
 }

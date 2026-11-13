@@ -15,8 +15,8 @@ import math
 from typing import Dict, List, Optional
 
 from .config import (CFA_CAP, CFA_PER_KW_FIRST_2, CFA_THIRD_KW, DAYS_IN_MONTH,
-                     OERC_EXPORT_FIT, OERC_MAX_NM_KW, OERC_NET_METER_CAP, SFA_CAP,
-                     SFA_PER_KW_FIRST_2, SFA_THIRD_KW)
+                     OERC_EXPORT_FIT, OERC_MAX_NM_KW, OERC_NET_METER_CAP, ROOF_TYPES,
+                     SFA_CAP, SFA_PER_KW_FIRST_2, SFA_THIRD_KW)
 from .tariff import flat_rate_override, marginal_rate, monthly_bill
 
 
@@ -118,6 +118,120 @@ def irr(cashflows: List[float]) -> Optional[float]:
     return (lo + hi) / 2
 
 
+# ------------------------------------------------------------------ rooftop & panel maintenance
+_FALLBACK_RAIN_DAY = [0.4, 0.7, 0.8, 1.2, 2.5, 7.0, 10.5, 11.0, 8.5, 4.5, 1.0, 0.3]
+
+_MOUNTING_BY_ROOF = {
+    "rcc": (
+        "Hot-dip galvanised (HDG) GI elevated legs on waterproof RCC ballast/anchor blocks",
+        "Inspect waterproof epoxy/polyurethane sealant around anchor blocks, clear terrace drain scuppers of leaves, and verify 0.5 m walkway clearance before the June monsoon.",
+    ),
+    "metal": (
+        "EPDM-gasketed standing-seam / purlin rail clamps on GI sheet roof",
+        "Check rubber EPDM washers for UV hardening, verify stainless self-tapping fasteners on purlins for zero rust or water seepage, and clear valley gutters.",
+    ),
+    "tile": (
+        "Stainless-steel rafter hooks with lead/EPDM flashing pass-throughs",
+        "Ensure all panel load rests on timber/steel rafters (never directly on clay tiles), check for cracked/shifted tiles around hooks, and sweep dry leaves.",
+    ),
+    "asbestos": (
+        "Structural purlin-anchored sub-frame (zero direct weight on AC sheets)",
+        "Never step directly on cement/AC sheets — clean panels from the edge/catwalk using a telescopic pole and inspect J-hook rubber washers annually.",
+    ),
+    "other": (
+        "Custom corrosion-resistant GI/aluminium mounting frame anchored to primary beams",
+        "Inspect structural anchor bolts, roof drainage outlets, and waterproofing around cable conduits every May before monsoon.",
+    ),
+}
+
+
+def assess_maintenance(
+    panels: int,
+    kw: float,
+    annual_gen: float,
+    annual_savings: float,
+    climate: Dict,
+    p: Dict,
+) -> Dict:
+    """Rooftop + solar PV maintenance schedule, water needs and Odisha cost model."""
+    rt = str(p.get("roof_type") or "rcc")
+    if rt not in ROOF_TYPES:
+        rt = "other"
+    rt_label = ROOF_TYPES[rt]["label"]
+    mounting, roof_care = _MOUNTING_BY_ROOF.get(rt, _MOUNTING_BY_ROOF["other"])
+
+    panel_area = round(panels * float(p.get("panel_len_m", 2.278)) * float(p.get("panel_wid_m", 1.134)), 1)
+    total_weight_kg = round(panels * 42.0)                  # ~28 kg module + ~14 kg HDG GI structure
+    load_kg_m2 = round(total_weight_kg / panel_area, 1) if panel_area > 0 else 0.0
+
+    rain_day = climate.get("rain_mm_day") or _FALLBACK_RAIN_DAY
+    rain_m = [float(r) * d for r, d in zip(rain_day, DAYS_IN_MONTH)]
+    if panels > 0:
+        # Dry months (<65 mm): 2 washes/mo (fortnightly); transitional (65-180 mm): 1 wash/mo;
+        # heavy monsoon (>=180 mm): 1 quick inspection & bird-dropping rinse (rain washes dust).
+        monthly_cleans = [2 if rm < 65.0 else 1 for rm in rain_m]
+    else:
+        monthly_cleans = [0] * 12
+
+    cleans_yr = sum(monthly_cleans)
+    water_per_panel = 3.5
+    water_per_wash = round(panels * water_per_panel, 1)
+    annual_water = round(water_per_wash * cleans_yr)
+    mins_per_wash = round(6 + panels * 2.5) if panels > 0 else 0
+
+    dust_loss_pct = 12.0
+    kwh_protected = round(annual_gen * (dust_loss_pct / 100.0))
+    savings_protected = round(annual_savings * (dust_loss_pct / 100.0))
+
+    life = int(p.get("life_years", 25))
+    free_cmc_years = 5                                      # PM Surya Ghar / OREDA vendor mandate
+    if panels > 0:
+        yr1_5_cost = round(300 + panels * 35)               # ₹0 vendor AMC; soft mop/wiper supplies only
+        diy_annual = round(800 + kw * 280)                  # Yr 6+: DIY cleaning + annual technician check
+        pro_visit = round(max(350.0, panels * 55.0))        # Per-visit professional panel wash in Odisha
+        amc_annual = round(max(2000.0, kw * 1200.0))        # Yr 6+: full vendor AMC (~₹1,200/kW/yr)
+        inv_year = 13
+        inv_cost = round(max(12000.0, kw * 6500.0))         # Mid-life on-grid inverter replacement reserve
+        post_years = max(0, life - free_cmc_years)
+        life_diy = free_cmc_years * yr1_5_cost + post_years * diy_annual + inv_cost
+        life_amc = free_cmc_years * yr1_5_cost + post_years * amc_annual + inv_cost
+    else:
+        yr1_5_cost = diy_annual = pro_visit = amc_annual = inv_cost = life_diy = life_amc = 0
+        inv_year = 13
+
+    return {
+        "panels": panels,
+        "kw": kw,
+        "roof_type": rt,
+        "roof_type_label": rt_label,
+        "mounting_type": mounting,
+        "rooftop_care_note": roof_care,
+        "panel_area_m2": panel_area,
+        "total_weight_kg": total_weight_kg,
+        "load_kg_per_m2": load_kg_m2,
+        "safe_rcc_load_kg_m2": 150.0,
+        "monthly_cleans": monthly_cleans,
+        "cleans_per_year": cleans_yr,
+        "water_per_panel_l": water_per_panel,
+        "water_per_wash_l": water_per_wash,
+        "annual_wash_water_l": annual_water,
+        "minutes_per_wash": mins_per_wash,
+        "dust_loss_pct": dust_loss_pct,
+        "kwh_protected_yr": kwh_protected,
+        "savings_protected_yr": savings_protected,
+        "free_cmc_years": free_cmc_years,
+        "years_1_to_5_annual_cost": yr1_5_cost,
+        "diy_annual_cost": diy_annual,
+        "pro_visit_cost": pro_visit,
+        "amc_annual_cost": amc_annual,
+        "inverter_replacement_year": inv_year,
+        "inverter_replacement_cost": inv_cost,
+        "lifetime_years": life,
+        "lifetime_cost_diy": life_diy,
+        "lifetime_cost_amc": life_amc,
+    }
+
+
 # ------------------------------------------------------------------ the assessment
 def _bill(units: float, p: Dict) -> Dict:
     """One month's OERC domestic bill, or the user's flat rate if they typed one."""
@@ -196,6 +310,7 @@ def assess_solar(roof_area_m2: float, climate: Dict, p: Dict,
     # Full-roof potential (if the family wants to maximise export income)
     full_kw = size["roof_max_kw"]
     full_gen = full_kw * annual_ypk
+    maint = assess_maintenance(size["panels"], kw, annual_gen, annual_savings, climate, p)
 
     return {
         **size,
@@ -248,5 +363,6 @@ def assess_solar(roof_area_m2: float, climate: Dict, p: Dict,
         "full_roof_kw": full_kw,
         "full_roof_gen": full_gen,
         "net_metering": net_meter_limit(kw, load),
+        "maintenance": maint,
         "pr_avg": annual_ypk / max(1e-9, sum(g * d for g, d in zip(climate["ghi"], DAYS_IN_MONTH))),
     }

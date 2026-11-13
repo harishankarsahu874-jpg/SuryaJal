@@ -573,7 +573,8 @@ def build_report_pdf(a: Dict, thumb: Optional[Image.Image], share_url: str,
     _bar_chart(c, M, ty - 28 - ch_h, W - 2 * M, ch_h, s["monthly_gen"], AMBER, s["monthly_consumption"],
                "Month-wise solar generation (units)", "Solar units", "Your monthly use")
     ny = ty - 28 - ch_h - 36
-    _notes(c, M, ny, W - 2 * M, [
+    m = s.get("maintenance") or {}
+    solar_notes = [
         ("How we calculated solar", True),
         (f"Sunlight: NASA POWER ({a['climate']['ghi_avg']:.2f} kWh/m²/day) × temperature-corrected performance "
          f"ratio {s['pr_avg']:.2f}; {p['m2_per_kw']:.0f} m² per kW (PM Surya Ghar portal); {p['panel_w']} Wp panels.", False),
@@ -584,9 +585,22 @@ def build_report_pdf(a: Dict, thumb: Optional[Image.Image], share_url: str,
          f"credited up to {s['net_meter_cap'] * 100:.0f}% of your yearly use.", False),
         (f"CO₂: CEA grid factor {p['co2_kg_per_kwh']} kg/unit; panels lose {p['degradation'] * 100:.1f}%/year; "
          f"tariff held flat (conservative).", False),
-        ("Next step: get a site survey from an MNRE/OREDA-empanelled vendor, apply on pmsuryaghar.gov.in and "
-         f"register for net metering with {loc.get('discom') or 'your Odisha DISCOM'}.", False),
-    ])
+    ]
+    if m and s["panels"] > 0:
+        solar_notes.append((
+            f"Maintenance: ₹0 vendor AMC in Years 1–{m['free_cmc_years']} (mandatory OREDA/PM Surya Ghar CMC); "
+            f"Year {m['free_cmc_years'] + 1}+ ~{rupees(m['diy_annual_cost'])}/yr DIY or {rupees(m['amc_annual_cost'])}/yr AMC, "
+            f"plus ~{rupees(m['inverter_replacement_cost'])} inverter reserve around Year {m['inverter_replacement_year']}. "
+            f"Wash {m['cleans_per_year']}×/yr early morning ({m['water_per_wash_l']:.0f} L plain/rain water); "
+            f"added roof load {m['load_kg_per_m2']} kg/m².",
+            False,
+        ))
+    solar_notes.append((
+        "Next step: get a site survey from an MNRE/OREDA-empanelled vendor, apply on pmsuryaghar.gov.in and "
+        f"register for net metering with {loc.get('discom') or 'your Odisha DISCOM'}.",
+        False,
+    ))
+    _notes(c, M, ny, W - 2 * M, solar_notes)
     c.showPage()
 
     # =============================== PAGE 3 - rainwater
