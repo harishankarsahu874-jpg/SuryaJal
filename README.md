@@ -30,6 +30,7 @@ Users can identify a roof, adjust household assumptions, compare energy and wate
 | Rainwater assessment | Monthly harvest, storage tank and recharge sizing, water-demand coverage, tanker savings and CHHATA eligibility estimates. |
 | Location context | District and DISCOM lookup, with bundled climate data covering all 30 Odisha districts. |
 | What-if planning | Adjustable consumption, panel count and household assumptions, with updated calculations and layouts. |
+| AI assistant | Roof-aware solar and rainwater Q&A, with English (India) / Hindi voice dictation, optional spoken replies and per-answer playback. Voice input depends on browser support and microphone permission. |
 | Reporting | Three-page A4 PDF covering the roof, solar and rainwater results, with a QR code and shareable assessment links. |
 | Optional accounts | Sign up, sign in, save and reopen roofs, revoke sessions and delete an account. Guests can assess roofs without signing in. |
 

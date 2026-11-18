@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react"
 import { AnimatePresence, motion } from "motion/react"
-import { ChevronDown, Loader2, MessageCircle, RotateCcw, SendHorizontal, Sparkles, X } from "lucide-react"
+import { ChevronDown, Loader2, MessageCircle, Mic, MicOff, RotateCcw, SendHorizontal, Sparkles, Volume2, VolumeX, X } from "lucide-react"
 import { LogoMark } from "@/components/brand/logo"
 import { api, type AgentResponse, type AgentTurn, type Assessment } from "@/lib/api"
 import { fmtIN, litres, rupees, sqft } from "@/lib/format"
 import { areaM2, encodePolyline } from "@/lib/geo"
 import { useDashboard, type Inputs, type Roof, type Tab } from "./state"
+import { useVoiceAssistant, type MicrophoneAccess, type VoiceLanguage } from "./use-voice-assistant"
 
 interface ChatMsg {
   id: string
@@ -93,16 +94,58 @@ export function AiAgent() {
   const [draft, setDraft] = useState("")
   const [busy, setBusy] = useState(false)
   const [sessions, setSessions] = useState<Record<string, RoofSession>>({})
+  const [showMicHelp, setShowMicHelp] = useState(false)
+  const voice = useVoiceAssistant()
+  const {
+    speechInputSupported,
+    speechOutputSupported,
+    listening,
+    voiceReplies,
+    microphoneAccess,
+    language,
+    setLanguage,
+    notice: voiceNotice,
+    speakingId,
+    clearNotice: clearVoiceNotice,
+    startListening,
+    requestMicrophoneAccess,
+    stopListening,
+    abortListening: abortVoiceListening,
+    speak,
+    speakNewReply,
+    stopSpeaking,
+    toggleVoiceReplies,
+  } = voice
 
   const scrollRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const seqRef = useRef(0)
+  const openRef = useRef(false)
+  const changeOpen = useCallback((next: boolean) => {
+    openRef.current = next
+    setOpen(next)
+    if (!next) setShowMicHelp(false)
+  }, [])
 
   const roofKey = useMemo(() => (roof ? encodePolyline(roof.latlngs) : ""), [roof])
+  const currentRoofKeyRef = useRef(roofKey)
+  const previousRoofKeyRef = useRef(roofKey)
   const session = roofKey ? sessions[roofKey] : undefined
   const messages = useMemo(() => session?.messages ?? [], [session])
   const activeTab: Exclude<Tab, "map"> = tab === "map" ? "solar" : tab
   const chips = session?.suggestions ?? DEFAULT_CHIPS[activeTab]
+
+  useEffect(() => {
+    const roofChanged = previousRoofKeyRef.current !== roofKey
+    previousRoofKeyRef.current = roofKey
+    currentRoofKeyRef.current = roofKey
+    openRef.current = open && Boolean(roofKey) && tab !== "map"
+    if (!openRef.current || roofChanged) {
+      abortVoiceListening()
+      stopSpeaking()
+      clearVoiceNotice()
+    }
+  }, [open, roofKey, tab, abortVoiceListening, clearVoiceNotice, stopSpeaking])
 
   // Scroll to newest message when conversation updates or drawer opens
   useEffect(() => {
@@ -123,11 +166,11 @@ export function AiAgent() {
   useEffect(() => {
     if (!open) return
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(false)
+      if (e.key === "Escape") changeOpen(false)
     }
     document.addEventListener("keydown", onKey)
     return () => document.removeEventListener("keydown", onKey)
-  }, [open])
+  }, [open, changeOpen])
 
   const appendMessage = useCallback((key: string, msg: ChatMsg, nextSuggestions?: string[] | null) => {
     setSessions((prev) => {
@@ -152,6 +195,9 @@ export function AiAgent() {
       ...messages.slice(-10).map((m) => ({ role: m.role, content: m.content })),
     ]
     const uid = ++seqRef.current
+    abortVoiceListening()
+    stopSpeaking()
+    clearVoiceNotice()
     appendMessage(key, { id: `u-${uid}`, role: "user", content: text })
     setDraft("")
     setBusy(true)
@@ -167,11 +213,13 @@ export function AiAgent() {
         },
       })
       const aid = ++seqRef.current
+      const replyId = `a-${aid}`
       appendMessage(
         key,
-        { id: `a-${aid}`, role: "assistant", content: res.reply },
+        { id: replyId, role: "assistant", content: res.reply },
         res.suggestions?.length ? res.suggestions : null,
       )
+      if (openRef.current && currentRoofKeyRef.current === key) speakNewReply(res.reply, replyId)
     } catch (err) {
       const eid = ++seqRef.current
       appendMessage(key, {
@@ -182,7 +230,7 @@ export function AiAgent() {
     } finally {
       setBusy(false)
     }
-  }, [activeTab, address, appendMessage, busy, inputs, messages, result, roof, roofKey])
+  }, [activeTab, abortVoiceListening, address, appendMessage, busy, clearVoiceNotice, inputs, messages, result, roof, roofKey, speakNewReply, stopSpeaking])
 
   if (!roof || tab === "map") return null
 
@@ -190,6 +238,9 @@ export function AiAgent() {
 
   const resetChat = () => {
     if (!roofKey) return
+    abortVoiceListening()
+    stopSpeaking()
+    clearVoiceNotice()
     setSessions((prev) => {
       const next = { ...prev }
       delete next[roofKey]
@@ -214,14 +265,25 @@ export function AiAgent() {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 14, scale: 0.96 }}
             transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
-            className="pointer-events-auto flex h-[min(35.5rem,calc(100dvh-5.25rem))] w-[min(24.5rem,calc(100vw-1.5rem))] origin-bottom-right flex-col overflow-hidden rounded-3xl border border-sage-200/90 bg-card shadow-[0_20px_55px_-12px_rgba(24,34,28,0.34)]"
+            className="pointer-events-auto relative flex h-[min(35.5rem,calc(100dvh-5.25rem))] w-[min(24.5rem,calc(100vw-1.5rem))] origin-bottom-right flex-col overflow-hidden rounded-3xl border border-sage-200/90 bg-card shadow-[0_20px_55px_-12px_rgba(24,34,28,0.34)]"
           >
             {/* header */}
             <div className="flex shrink-0 items-center gap-2.5 border-b border-sage-800/20 bg-gradient-to-r from-sage-900 via-sage-800 to-sage-900 px-3.5 py-3 text-white">
               <LogoMark className="size-9 shrink-0 rounded-xl shadow-sm" />
               <div className="min-w-0 flex-1">
                 <span className="font-heading text-[1.05rem] leading-none font-semibold tracking-tight">SuryaJal</span>
+                <span className="mt-0.5 block truncate text-[10px] text-white/65">Roof assistant · text &amp; voice</span>
               </div>
+              <button
+                type="button"
+                onClick={toggleVoiceReplies}
+                title={!speechOutputSupported ? "Spoken replies are not supported in this browser" : voiceReplies ? "Turn voice replies off" : "Read new answers aloud"}
+                aria-label={!speechOutputSupported ? "Spoken replies unavailable" : voiceReplies ? "Turn spoken replies off" : "Turn spoken replies on"}
+                aria-pressed={voiceReplies}
+                className={`grid size-8 shrink-0 place-items-center rounded-xl transition hover:bg-white/12 ${voiceReplies ? "bg-white/15 text-amber-200" : "text-white/75 hover:text-white"}`}
+              >
+                {voiceReplies ? <Volume2 className="size-4" /> : <VolumeX className="size-4" />}
+              </button>
               {messages.length > 0 && (
                 <button
                   type="button"
@@ -235,7 +297,7 @@ export function AiAgent() {
               )}
               <button
                 type="button"
-                onClick={() => setOpen(false)}
+                onClick={() => changeOpen(false)}
                 title="Minimize assistant"
                 aria-label="Minimize assistant"
                 className="grid size-8 shrink-0 place-items-center rounded-xl text-white/80 transition hover:bg-white/12 hover:text-white"
@@ -246,9 +308,24 @@ export function AiAgent() {
 
             {/* messages */}
             <div ref={scrollRef} className="min-h-0 flex-1 space-y-3 overflow-y-auto bg-background/65 px-3.5 py-3.5">
-              <Bubble role="assistant" content={welcome} />
+              <Bubble
+                role="assistant"
+                content={welcome}
+                messageId="welcome"
+                speechEnabled={speechOutputSupported}
+                speaking={speakingId === "welcome"}
+                onSpeak={() => speakingId === "welcome" ? stopSpeaking() : speak(welcome, "welcome")}
+              />
               {messages.map((m) => (
-                <Bubble key={m.id} role={m.role} content={m.content} />
+                <Bubble
+                  key={m.id}
+                  role={m.role}
+                  content={m.content}
+                  messageId={m.id}
+                  speechEnabled={speechOutputSupported}
+                  speaking={speakingId === m.id}
+                  onSpeak={() => speakingId === m.id ? stopSpeaking() : speak(m.content, m.id)}
+                />
               ))}
               {busy && (
                 <div className="flex items-start gap-2">
@@ -279,7 +356,36 @@ export function AiAgent() {
               </div>
             )}
 
-            {/* input form */}
+            {/* input form and browser-native voice controls */}
+            {voiceNotice && (
+              <div
+                role={voiceNotice.kind === "error" ? "alert" : "status"}
+                aria-live="polite"
+                className={`flex shrink-0 items-center gap-1.5 border-t border-border/50 px-3 py-1.5 text-[11px] leading-snug ${voiceNotice.kind === "error" ? "text-destructive" : voiceNotice.kind === "success" ? "text-primary" : "text-muted-foreground"}`}
+              >
+                <span aria-hidden="true" className={`size-1.5 shrink-0 rounded-full ${voiceNotice.kind === "error" ? "bg-destructive" : voiceNotice.kind === "success" ? "bg-primary" : "bg-amber-500"}`} />
+                <span>{voiceNotice.message}</span>
+              </div>
+            )}
+            {microphoneAccess === "blocked" && (
+              <div className="flex shrink-0 flex-wrap items-center gap-1.5 border-t border-rose-200/70 bg-rose-50 px-3 py-1.5">
+                <span className="mr-auto text-[10.5px] font-semibold text-rose-800">Microphone blocked</span>
+                <button
+                  type="button"
+                  onClick={() => void requestMicrophoneAccess()}
+                  className="rounded-lg bg-primary px-2.5 py-1 text-[10.5px] font-semibold text-white transition hover:bg-primary/90"
+                >
+                  Enable mic
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowMicHelp(true)}
+                  className="rounded-lg border border-rose-200 bg-white px-2.5 py-1 text-[10.5px] font-semibold text-rose-800 transition hover:bg-rose-100"
+                >
+                  How to allow
+                </button>
+              </div>
+            )}
             <form onSubmit={onSubmit} className="flex shrink-0 items-center gap-2 border-t border-border/80 bg-card p-2.5">
               <input
                 ref={inputRef}
@@ -288,8 +394,38 @@ export function AiAgent() {
                 maxLength={1500}
                 placeholder="Ask about solar, rainwater, subsidy, bills…"
                 aria-label="Ask SuryaJal"
-                className="h-10 min-w-0 flex-1 rounded-xl border border-input bg-background px-3 text-[13.5px] outline-none transition focus:border-primary/50 focus:ring-2 focus:ring-ring/35"
+                disabled={busy || listening}
+                className="h-10 min-w-0 flex-1 rounded-xl border border-input bg-background px-3 text-[13.5px] outline-none transition focus:border-primary/50 focus:ring-2 focus:ring-ring/35 disabled:cursor-not-allowed disabled:opacity-65"
               />
+              <select
+                value={language}
+                onChange={(e) => setLanguage(e.target.value as VoiceLanguage)}
+                aria-label="Voice language for microphone and spoken replies"
+                title="Voice language: English (India) or Hindi"
+                disabled={listening}
+                className="h-10 w-[3.75rem] shrink-0 rounded-xl border border-input bg-background px-1 text-center text-xs font-semibold text-foreground outline-none transition focus:border-primary/50 focus:ring-2 focus:ring-ring/35 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <option value="en-IN">EN</option>
+                <option value="hi-IN">हि</option>
+              </select>
+              <button
+                type="button"
+                onClick={() => {
+                  if (listening) stopListening()
+                  else {
+                    stopSpeaking()
+                    startListening(draft, setDraft)
+                  }
+                }}
+                disabled={busy}
+                aria-label={listening ? "Stop voice input" : "Start voice input"}
+                aria-describedby="voice-help"
+                aria-pressed={listening}
+                title={!speechInputSupported ? "Voice input isn’t supported in this browser" : listening ? "Stop listening" : "Speak your question"}
+                className={`grid size-10 shrink-0 place-items-center rounded-xl border transition active:translate-y-px disabled:cursor-not-allowed disabled:opacity-45 ${listening ? "border-rose-700 bg-rose-600 text-white hover:bg-rose-700" : "border-input bg-background text-muted-foreground hover:bg-secondary hover:text-foreground"}`}
+              >
+                {listening ? <MicOff className="size-4" /> : <Mic className="size-4" />}
+              </button>
               <button
                 type="submit"
                 disabled={!draft.trim() || busy}
@@ -299,6 +435,26 @@ export function AiAgent() {
                 <SendHorizontal className="size-4" />
               </button>
             </form>
+            <p id="voice-help" className="shrink-0 border-t border-border/40 px-3 py-1.5 text-[10px] leading-snug text-muted-foreground">
+              Mic uses your browser’s speech service; review the transcript before sending. Turn on the speaker for spoken answers.{" "}
+              <button
+                type="button"
+                onClick={() => setShowMicHelp(true)}
+                className="font-semibold text-primary underline decoration-primary/40 underline-offset-2 hover:decoration-primary"
+              >
+                Need permission help?
+              </button>
+            </p>
+            {showMicHelp && (
+              <MicrophoneHelp
+                permission={microphoneAccess}
+                onClose={() => setShowMicHelp(false)}
+                onRequest={async () => {
+                  const granted = await requestMicrophoneAccess()
+                  if (granted) setShowMicHelp(false)
+                }}
+              />
+            )}
           </motion.section>
         ) : (
           <motion.div
@@ -320,7 +476,7 @@ export function AiAgent() {
                   type="button"
                   onClick={() => {
                     setNudgeDismissed(true)
-                    setOpen(true)
+                    changeOpen(true)
                   }}
                   className="text-left leading-snug font-medium text-sage-900 hover:text-primary"
                 >
@@ -341,7 +497,7 @@ export function AiAgent() {
               type="button"
               onClick={() => {
                 setNudgeDismissed(true)
-                setOpen(true)
+                changeOpen(true)
               }}
               aria-label="Open SuryaJal assistant"
               className="group inline-flex h-13 items-center gap-2.5 rounded-full border border-sage-700/40 bg-gradient-to-r from-sage-900 via-sage-800 to-primary pr-4 pl-2.5 text-white shadow-[0_10px_28px_-6px_rgba(24,34,28,0.48)] transition hover:-translate-y-0.5 hover:shadow-[0_14px_32px_-6px_rgba(24,34,28,0.55)] active:translate-y-0"
@@ -360,7 +516,138 @@ export function AiAgent() {
   )
 }
 
-function Bubble({ role, content }: { role: "user" | "assistant"; content: string }) {
+function MicrophoneHelp({
+  permission,
+  onClose,
+  onRequest,
+}: {
+  permission: MicrophoneAccess
+  onClose: () => void
+  onRequest: () => Promise<void>
+}) {
+  const statusText = permission === "blocked"
+    ? "Your browser has blocked this site. The website can’t change that setting for you, but the steps below will show where to allow it."
+    : permission === "unsupported"
+      ? "This browser or page doesn’t support secure microphone requests. Try Chrome or Edge on HTTPS; text chat will still work."
+      : permission === "not-found"
+        ? "No microphone was detected. Connect a microphone, then request access again."
+        : permission === "granted"
+          ? "Microphone access is allowed. Close this guide and tap the mic button to speak."
+          : permission === "requesting"
+            ? "Your browser’s permission prompt should be open. Choose Allow there to continue."
+            : "Tap Enable microphone below. Your browser will show its own permission prompt; choose Allow there."
+
+  return (
+    <div
+      className="absolute inset-0 z-20 grid place-items-center bg-sage-950/55 p-3"
+      onClick={(event) => {
+        if (event.target === event.currentTarget) onClose()
+      }}
+      onKeyDown={(event) => {
+        if (event.key === "Escape") {
+          event.stopPropagation()
+          onClose()
+        }
+      }}
+    >
+      <section
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="mic-help-title"
+        aria-describedby="mic-help-description"
+        className="max-h-full w-full max-w-[22rem] overflow-y-auto rounded-2xl border border-sage-200 bg-card p-4 text-foreground shadow-2xl"
+      >
+        <div className="flex items-start gap-3">
+          <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-secondary text-primary">
+            <Mic className="size-5" />
+          </span>
+          <div className="min-w-0 flex-1">
+            <h2 id="mic-help-title" className="font-heading text-lg font-semibold leading-tight">Allow microphone</h2>
+            <p className="mt-0.5 text-xs text-muted-foreground">One quick browser permission</p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close microphone help"
+            autoFocus
+            className="grid size-8 shrink-0 place-items-center rounded-lg text-muted-foreground transition hover:bg-secondary hover:text-foreground"
+          >
+            <X className="size-4" />
+          </button>
+        </div>
+
+        <p id="mic-help-description" className="mt-3 text-[12px] leading-relaxed text-foreground/85">{statusText}</p>
+
+        {permission === "blocked" && (
+          <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-[11px] leading-relaxed text-amber-950">
+            <p className="font-semibold">If you already blocked the prompt:</p>
+            <ol className="mt-1.5 list-decimal space-y-1 pl-4">
+              <li>Open this site’s controls beside the address bar (lock, tune, or site-info icon).</li>
+              <li>Set <strong>Microphone</strong> to <strong>Allow</strong>.</li>
+              <li>Return here and tap the microphone again. Reload if your browser asks.</li>
+            </ol>
+          </div>
+        )}
+
+        {permission === "not-found" && (
+          <div className="mt-3 rounded-xl border border-sage-200 bg-sage-50 p-3 text-[11px] leading-relaxed text-sage-900">
+            Check that a microphone is connected and isn’t being used exclusively by another app, then try again.
+          </div>
+        )}
+
+        {permission === "unsupported" && (
+          <div className="mt-3 rounded-xl border border-sage-200 bg-sage-50 p-3 text-[11px] leading-relaxed text-sage-900">
+            Voice dictation needs browser speech-recognition support and a secure page (HTTPS or localhost). You can still use text chat and spoken replies where available.
+          </div>
+        )}
+
+        {permission !== "unsupported" && permission !== "granted" && (
+          <button
+            type="button"
+            onClick={() => void onRequest()}
+            disabled={permission === "requesting"}
+            className="mt-4 flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-primary px-3 text-sm font-semibold text-primary-foreground shadow-sm transition hover:bg-primary/90 disabled:cursor-wait disabled:opacity-60"
+          >
+            <Mic className="size-4" />
+            {permission === "requesting" ? "Waiting for browser…" : permission === "blocked" ? "Try permission again" : permission === "not-found" ? "Check microphone again" : "Enable microphone"}
+          </button>
+        )}
+
+        <a
+          href={typeof window === "undefined" ? "/app" : window.location.href}
+          target="_blank"
+          rel="noreferrer"
+          className="mt-3 block text-center text-[11px] font-semibold text-primary underline decoration-primary/40 underline-offset-2 hover:decoration-primary"
+        >
+          Open this preview in a new tab
+        </a>
+        <button
+          type="button"
+          onClick={onClose}
+          className="mt-3 h-9 w-full rounded-xl border border-border bg-background text-xs font-semibold text-foreground transition hover:bg-secondary"
+        >
+          Back to assistant
+        </button>
+      </section>
+    </div>
+  )
+}
+
+function Bubble({
+  role,
+  content,
+  messageId,
+  speechEnabled = false,
+  speaking = false,
+  onSpeak,
+}: {
+  role: "user" | "assistant"
+  content: string
+  messageId?: string
+  speechEnabled?: boolean
+  speaking?: boolean
+  onSpeak?: () => void
+}) {
   if (role === "user") {
     return (
       <div className="flex justify-end">
@@ -378,6 +665,18 @@ function Bubble({ role, content }: { role: "user" | "assistant"; content: string
       </span>
       <div className="min-w-0 max-w-[89%] space-y-2 rounded-2xl rounded-tl-sm border border-border/80 bg-card px-3.5 py-2.5 text-[13px] leading-relaxed text-foreground shadow-2xs tabular">
         <FormattedText text={content} />
+        {speechEnabled && messageId && onSpeak && (
+          <button
+            type="button"
+            onClick={onSpeak}
+            aria-label={speaking ? "Stop speaking this answer" : "Listen to this answer"}
+            title={speaking ? "Stop speaking" : "Listen to answer"}
+            className="inline-flex items-center gap-1 rounded-lg px-1.5 py-1 text-[10.5px] font-semibold text-primary transition hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+          >
+            {speaking ? <VolumeX className="size-3.5" /> : <Volume2 className="size-3.5" />}
+            <span>{speaking ? "Stop" : "Listen"}</span>
+          </button>
+        )}
       </div>
     </div>
   )
