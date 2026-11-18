@@ -19,7 +19,6 @@ export default defineConfig({
     proxy: {
       '/api': BACKEND,
       '/r': BACKEND,
-      '/app': BACKEND,
       '/static': BACKEND,
     },
   },
