@@ -6,6 +6,7 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { fmtIN, litres, MONTHS_LONG, rupees } from "@/lib/format"
 import { cn } from "@/lib/utils"
+import { CurrentWeatherCard } from "./current-weather"
 import { ViewSkeleton } from "./solar-view"
 import { useDashboard } from "./state"
 import { CountUp, EmptyState, MonthBars, Pill, SectionCard, StatTile, TankGauge } from "./ui-bits"
@@ -29,11 +30,12 @@ export function RainView() {
   return (
     <div className={cn("space-y-3.5 transition-opacity", assessing && "opacity-80")}>
       <div className="flex items-center justify-between gap-2">
-        <Pill tone="water"><CloudRain className="size-3.5" /> NASA POWER rainfall</Pill>
+        <Pill tone="water"><CloudRain className="size-3.5" /> Historical NASA POWER rainfall</Pill>
         <span className="text-xs font-medium text-muted-foreground tabular">
           {fmtIN(w.annual_rain_mm)} mm / year{w.rain_overridden && " (your value)"}
         </span>
       </div>
+      <CurrentWeatherCard key={`${r.centroid[0]}-${r.centroid[1]}`} lat={r.centroid[0]} lon={r.centroid[1]} />
 
       {/* hero */}
       <section className="relative overflow-hidden rounded-2xl border border-sky-200/70 bg-gradient-to-br from-water-soft via-sky-50 to-white p-4 sm:p-5">

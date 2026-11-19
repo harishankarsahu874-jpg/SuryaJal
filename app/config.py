@@ -212,6 +212,10 @@ SOURCES = [
     ("Solar & rainfall climatology",
      "NASA POWER API, 2001-2020 monthly climatology - all 30 Odisha districts bundled offline",
      "https://power.larc.nasa.gov/"),
+    ("Current weather",
+     "Open-Meteo forecast models: current temperature, precipitation, cloud cover, wind and hourly solar radiation; "
+     "a model estimate, not a roof-level station observation",
+     "https://open-meteo.com/"),
     ("Central subsidy", "PM Surya Ghar: Muft Bijli Yojana - Rs 30,000/kW up to 2 kW + Rs 18,000 "
      "for the 3rd kW, capped at Rs 78,000 (via OREDA / your DISCOM)",
      "https://pmsuryaghar.gov.in/"),

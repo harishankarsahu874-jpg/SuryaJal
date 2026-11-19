@@ -26,6 +26,7 @@ from pydantic import BaseModel, Field, field_validator
 
 from . import agent, auth, odisha, stats
 from .climate import get_climate
+from .weather import get_current_weather
 from .config import (APP_NAME, APP_VERSION, CHHATA, DEFAULTS, DISCOMS, FALLBACK_CLIMATE_FILE,
                      MAP_CENTER, MAP_ZOOM, MAX_NATIVE_ZOOM, M_PER_PX_REF_LAT, MODELS_DIR,
                      NOMINATIM_URL, NOMINATIM_VIEWBOX, ODA_DOWNPIPE_MM,
@@ -253,6 +254,16 @@ async def odisha_locate(lat: float = Query(..., ge=-85, le=85),
     loc = odisha.locate(lat, lon)
     loc["in_odisha"] = odisha.in_odisha(lat, lon)
     return loc
+
+
+@app.get("/api/weather/current")
+async def current_weather(lat: float = Query(..., ge=-85, le=85),
+                          lon: float = Query(..., ge=-180, le=180)):
+    """Model-based current weather and today's forecast for a roof coordinate."""
+    try:
+        return await get_current_weather(lat, lon, state.get("http"))
+    except Exception as exc:
+        raise HTTPException(502, "Current weather is temporarily unavailable.") from exc
 
 
 @app.get("/api/odisha/tariff")

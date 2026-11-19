@@ -10,6 +10,7 @@ import type { LatLng } from "@/lib/geo"
 import { capturePolyCrop, darkCropFor, drawLayoutImage, type TileCrop } from "@/lib/mapcrop"
 import { useReportDownload } from "@/lib/report"
 import { cn } from "@/lib/utils"
+import { CurrentWeatherCard } from "./current-weather"
 import { SolarMaintenanceSection } from "./maintenance-view"
 import { useDashboard } from "./state"
 import { CountUp, EmptyState, MonthBars, Pill, SavingsTimeline, SectionCard, StatTile } from "./ui-bits"
@@ -62,12 +63,13 @@ export function SolarView() {
     <div className={cn("space-y-3.5 transition-opacity", assessing && "opacity-80")}>
       {/* data source row */}
       <div className="flex items-center justify-between gap-2">
-        <Pill><Satellite className="size-3.5" /> NASA POWER Climatology API</Pill>
+        <Pill><Satellite className="size-3.5" /> NASA POWER · 2001–2020 climate</Pill>
         <span className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
           <span className={cn("size-2 rounded-full", offline ? "bg-amber-500" : "bg-emerald-500 shadow-[0_0_0_3px_rgba(16,185,129,.18)]")} />
-          {offline ? "Offline data" : "Live data"}
+          {offline ? "Bundled fallback" : "Historical averages"}
         </span>
       </div>
+      <CurrentWeatherCard key={`${r.centroid[0]}-${r.centroid[1]}`} lat={r.centroid[0]} lon={r.centroid[1]} />
 
       {/* analysed rooftop */}
       <section className="rounded-2xl border border-sage-200 bg-sage-100/70 p-4 sm:p-5">

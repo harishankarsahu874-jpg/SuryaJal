@@ -162,6 +162,28 @@ export interface LocationInfo {
   discoms?: Record<string, Discom>
 }
 
+export interface CurrentWeather {
+  source: string
+  timezone: string
+  timezone_abbreviation: string
+  current_time: string
+  fetched_at: string
+  temperature_c: number
+  relative_humidity_pct: number
+  precipitation_mm: number
+  rain_mm: number
+  weather_code: number
+  cloud_cover_pct: number
+  wind_speed_kmh: number
+  shortwave_radiation_w_m2: number | null
+  today: {
+    rain_forecast_mm: number | null
+    rain_probability_pct: number | null
+    min_temperature_c: number | null
+    max_temperature_c: number | null
+  }
+}
+
 export interface AppConfig {
   defaults: Defaults
   roof_types: Record<string, { label: string; c: number }>
