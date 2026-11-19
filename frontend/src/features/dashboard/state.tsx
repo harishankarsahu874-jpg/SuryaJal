@@ -8,10 +8,10 @@ import { centroid, decodePolyline, DEMO_ROOF, DEMO_ROOFS, encodePolyline, type L
 
 /** "mapped" = a building outline from a campus map (traced on the same imagery) */
 export type RoofMethod = "ai" | "ai-edited" | "manual" | "mapped"
-export type Tab = "map" | "solar" | "rain" | "report"
+export type Tab = "map" | "solar" | "rain" | "bom" | "report"
 
 /** the result views - reached via "Show More" on the map's roof card */
-const RESULT_TABS: readonly string[] = ["solar", "rain", "report"] satisfies Tab[]
+const RESULT_TABS: readonly string[] = ["solar", "rain", "bom", "report"] satisfies Tab[]
 
 export interface Roof {
   latlngs: LatLng[]
