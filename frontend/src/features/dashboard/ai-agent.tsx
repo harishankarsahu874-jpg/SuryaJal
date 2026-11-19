@@ -30,6 +30,11 @@ const DEFAULT_CHIPS: Record<Exclude<Tab, "map">, string[]> = {
     "What tank & recharge pit size do I need?",
     "Do solar panels block rainwater?",
   ],
+  bom: [
+    "What items should I check in a solar quote?",
+    "Is this combined solar and rainwater quote fair?",
+    "Where can I verify an OREDA-empanelled vendor?",
+  ],
   report: [
     "Summarize my full roof report",
     "Total cost & savings after all subsidies?",

@@ -1,10 +1,11 @@
 import { useEffect, useRef } from "react"
 import { Link } from "react-router-dom"
 import { AnimatePresence, motion } from "motion/react"
-import { ArrowLeft, ChartColumn, Droplet, Sun } from "lucide-react"
+import { ArrowLeft, ChartColumn, ClipboardList, Droplet, Sun } from "lucide-react"
 import { LogoMark } from "@/components/brand/logo"
 import { UserMenu } from "@/components/site/user-menu"
 import { AiAgent } from "@/features/dashboard/ai-agent"
+import { BomView } from "@/features/dashboard/bom-view"
 import { MapPanel } from "@/features/dashboard/map-panel"
 import { RainView } from "@/features/dashboard/rain-view"
 import { ReportView } from "@/features/dashboard/report-view"
@@ -16,6 +17,7 @@ import { cn } from "@/lib/utils"
 const SECTIONS: { id: Exclude<Tab, "map">; label: string; icon: typeof Sun }[] = [
   { id: "solar", label: "Solar", icon: Sun },
   { id: "rain", label: "Rainwater", icon: Droplet },
+  { id: "bom", label: "BOM & Quotes", icon: ClipboardList },
   { id: "report", label: "Report", icon: ChartColumn },
 ]
 
@@ -104,7 +106,8 @@ function Dashboard() {
               <motion.div key={panelTab}
                 initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }}
                 transition={{ duration: 0.22, ease: "easeOut" }}>
-                {panelTab === "solar" ? <SolarView /> : panelTab === "rain" ? <RainView /> : <ReportView />}
+                {panelTab === "solar" ? <SolarView /> : panelTab === "rain" ? <RainView />
+                  : panelTab === "bom" ? <BomView /> : <ReportView />}
               </motion.div>
             </AnimatePresence>
           </div>
