@@ -10,7 +10,6 @@ import type { LatLng } from "@/lib/geo"
 import { capturePolyCrop, darkCropFor, drawLayoutImage, type TileCrop } from "@/lib/mapcrop"
 import { useReportDownload } from "@/lib/report"
 import { cn } from "@/lib/utils"
-import { CurrentWeatherCard } from "./current-weather"
 import { SolarMaintenanceSection } from "./maintenance-view"
 import { useDashboard } from "./state"
 import { CountUp, EmptyState, MonthBars, Pill, SavingsTimeline, SectionCard, StatTile } from "./ui-bits"
@@ -69,8 +68,6 @@ export function SolarView() {
           {offline ? "Bundled fallback" : "Historical averages"}
         </span>
       </div>
-      <CurrentWeatherCard key={`${r.centroid[0]}-${r.centroid[1]}`} lat={r.centroid[0]} lon={r.centroid[1]} />
-
       {/* analysed rooftop */}
       <section className="rounded-2xl border border-sage-200 bg-sage-100/70 p-4 sm:p-5">
         <div className="flex items-start gap-3">

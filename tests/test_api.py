@@ -22,20 +22,6 @@ def test_health_and_config(client):
     assert "rcc" in cfg["roof_types"] and cfg["defaults"]["m2_per_kw"] == 10.0
 
 
-def test_current_weather_route(client, monkeypatch):
-    import app.main as m
-
-    async def fake_weather(lat, lon, http_client=None):
-        return {"source": "Open-Meteo forecast models", "temperature_c": 24.0,
-                "coords": [lat, lon]}
-
-    monkeypatch.setattr(m, "get_current_weather", fake_weather)
-    response = client.get("/api/weather/current", params={"lat": 20.3, "lon": 85.8})
-    assert response.status_code == 200
-    assert response.json()["coords"] == [20.3, 85.8]
-    assert client.get("/api/weather/current", params={"lat": 100, "lon": 85.8}).status_code == 422
-
-
 def test_assess(client):
     r = client.post("/api/assess", json={"polygon": ROOF, "monthly_units": 300, "family_size": 4})
     assert r.status_code == 200

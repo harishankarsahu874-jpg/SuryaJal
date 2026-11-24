@@ -6,7 +6,6 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { fmtIN, litres, MONTHS_LONG, rupees } from "@/lib/format"
 import { cn } from "@/lib/utils"
-import { CurrentWeatherCard } from "./current-weather"
 import { ViewSkeleton } from "./solar-view"
 import { useDashboard } from "./state"
 import { CountUp, EmptyState, MonthBars, Pill, SectionCard, StatTile, TankGauge } from "./ui-bits"
@@ -35,8 +34,6 @@ export function RainView() {
           {fmtIN(w.annual_rain_mm)} mm / year{w.rain_overridden && " (your value)"}
         </span>
       </div>
-      <CurrentWeatherCard key={`${r.centroid[0]}-${r.centroid[1]}`} lat={r.centroid[0]} lon={r.centroid[1]} />
-
       {/* hero */}
       <section className="relative overflow-hidden rounded-2xl border border-sky-200/70 bg-gradient-to-br from-water-soft via-sky-50 to-white p-4 sm:p-5">
         <Waves className="absolute -right-6 -bottom-6 size-36 text-sky-200/60" aria-hidden />
