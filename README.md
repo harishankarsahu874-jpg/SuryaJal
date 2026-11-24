@@ -27,7 +27,6 @@ Users can identify a roof, adjust household assumptions, compare energy and wate
 | NIST University campus | Every traced building and open area of the NIST University campus in Berhampur is outlined and labelled on the map. Searching for a building or a section inside it (for example "nist library") shows that building, and tapping a building selects its roof for assessment. |
 | Panel layout | Automatic panel placement on the roof polygon, with edge clearance and physical fit checks. |
 | Solar assessment | Recommended capacity, monthly generation, installation cost, central and Odisha subsidy estimates, electricity bills before and after solar, net-metering estimates, payback, IRR and a 25-year savings view. |
-| Current weather | Open-Meteo model-based current conditions and same-day forecast for the roof location, shown separately from the long-term design climate. |
 | Rainwater assessment | Monthly harvest, storage tank and recharge sizing, water-demand coverage, tanker savings and CHHATA eligibility estimates. |
 | Location context | District and DISCOM lookup, with bundled climate data covering all 30 Odisha districts. |
 | What-if planning | Adjustable consumption, panel count and household assumptions, with updated calculations and layouts. |
@@ -175,7 +174,6 @@ Use `/docs` for complete request schemas, optional parameters and response forma
 | --- | --- | --- |
 | GET | `/api/health`, `/api/config` | Service status, AI readiness, defaults and source references. |
 | GET | `/api/odisha/table`, `/api/odisha/locate`, `/api/odisha/tariff` | Bundled climate table, district/DISCOM lookup and itemised bills. |
-| GET | `/api/weather/current?lat=…&lon=…` | Model-based current conditions and same-day forecast from Open-Meteo. |
 | GET | `/api/suggest`, `/api/geocode`, `/api/reverse` | Offline and campus suggestions, online place search and reverse geocoding. |
 | GET | `/api/campus/{id}` | Campus map layer (`nist`): outlines, labels and sections of each building. |
 | POST | `/api/segment` | Roof outline from labelled map points. |
@@ -209,7 +207,7 @@ These are **implemented defaults**, not independently verified current entitleme
 | CHHATA | Preliminary checks using roof area, floors and configured scheme coverage; 50% of estimated cost up to INR 55,000. |
 | Water demand | 135 litres per person per day by default. |
 
-Annual solar and rainwater estimates use NASA POWER monthly climatology, with cache and bundled fallback data. A separate current-weather card fetches model-based conditions and a same-day forecast from Open-Meteo; it is not a roof-level station observation and does not replace the long-term climate used in the annual calculations. Tariffs, costs, eligibility and scheme windows must be verified with the relevant authority before an application or installation.
+Annual solar and rainwater estimates use NASA POWER monthly climatology, with cache and bundled fallback data. Tariffs, costs, eligibility and scheme windows must be verified with the relevant authority before an application or installation.
 
 ## Configuration and deployment
 
@@ -249,7 +247,7 @@ Do not mount over `/app/data`: that would hide the bundled climate fallback file
 
 - Roof outlines depend on satellite resolution, imagery age and nearby obstructions. Review and correct the polygon before assessing.
 - Automated shading and structural safety analysis are not implemented. The usable-roof fraction is an approximation, not a survey.
-- Annual solar/rain estimates use regional long-term climate, not roof-level measurements. The separate Open-Meteo current-weather card is a model estimate/forecast, not a local weather-station observation.
+- Climate data represents regional long-term conditions, not roof-level measurements or a forecast.
 - Cached imagery and bundled climate data improve resilience but do not make the entire application offline.
 - QR links using a LAN address require network reachability and a suitable firewall configuration. Use a public deployment for remote sharing.
 - Subsidy eligibility, installation costs, tariffs and local requirements may change. Final approvals remain with the relevant authorities.
@@ -260,7 +258,7 @@ Historical screenshots and a sample report remain in `docs/` as reference materi
 
 ## Sources and credits
 
-- Long-term climate: [NASA POWER](https://power.larc.nasa.gov/); current model-based weather: [Open-Meteo](https://open-meteo.com/).
+- Climate: [NASA POWER](https://power.larc.nasa.gov/).
 - Solar schemes and regulation: [PM Surya Ghar](https://pmsuryaghar.gov.in/), [OREDA](https://oredaodisha.com/), [OERC](https://www.orierc.org/) and [CEA](https://cea.nic.in/).
 - Rainwater references: [Odisha Housing and Urban Development](https://urban.odisha.gov.in/) and [CHHATA](https://echhata.odisha.gov.in/).
 - Roof segmentation: [MobileSAM](https://github.com/ChaoningZhang/MobileSAM), the [Acly ONNX export](https://huggingface.co/Acly/MobileSAM) and Meta's [Segment Anything](https://segment-anything.com/).
